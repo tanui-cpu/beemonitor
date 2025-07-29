@@ -37,11 +37,17 @@ async function fetchAllUsers() {
                     <td>${htmlspecialchars(user.role.charAt(0).toUpperCase() + user.role.slice(1))}</td>
                     <td>${user.is_approved == 1 ? 'Yes' : 'No'}</td>
                     <td>
+                        <button class="btn btn-sm btn-info-custom edit-user-btn me-1"
+                            data-id="${user.id}"
+                            data-full-name="${htmlspecialchars(user.full_name)}"
+                            data-email="${htmlspecialchars(user.email)}"
+                            data-role="${htmlspecialchars(user.role)}"
+                            data-is-approved="${user.is_approved}">Edit</button>
                         ${user.is_approved == 0 ? `
                             <button class="btn btn-sm btn-approve approve-btn me-1" data-id="${user.id}">Approve</button>
                         ` : ''}
                         ${user.id != currentAdminId ? `
-                            <button class="btn btn-sm btn-delete delete-btn" data-id="${user.id}">Delete</button>
+                            <button class="btn btn-sm btn-danger delete-btn" data-id="${user.id}">Delete</button>
                         ` : `
                             <span class="text-muted">(You)</span>
                         `}
@@ -51,7 +57,18 @@ async function fetchAllUsers() {
             });
             usersListDiv.appendChild(table);
 
-            // Add event listeners for buttons
+            // Add event listeners for new buttons
+            document.querySelectorAll('.edit-user-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const userId = event.target.dataset.id;
+                    const fullName = event.target.dataset.fullName;
+                    const email = event.target.dataset.email;
+                    const role = event.target.dataset.role;
+                    const isApproved = event.target.dataset.isApproved == '1'; // Convert to boolean
+                    showEditUserModal(userId, fullName, email, role, isApproved);
+                });
+            });
+
             document.querySelectorAll('.approve-btn').forEach(button => {
                 button.addEventListener('click', async (event) => {
                     const userId = event.target.dataset.id;
@@ -96,6 +113,34 @@ async function approveUser(userId) {
     }
 }
 
+// NEW: Function to update a user
+async function updateUser(userId, fullName, email, role, isApproved) {
+    try {
+        const response = await fetch('backend.php?action=update_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                full_name: fullName,
+                email: email,
+                role: role,
+                is_approved: isApproved ? 1 : 0 // Send as integer
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showBootstrapAlert('success', data.message || 'User updated successfully.');
+            fetchAllUsers(); // Refresh the list
+        } else {
+            showBootstrapAlert('danger', data.message || 'Failed to update user.');
+        }
+    } catch (error) {
+        console.error('Error updating user:', error);
+        showBootstrapAlert('danger', 'An error occurred while updating the user.');
+    }
+}
+
+
 // Function to delete a user
 async function deleteUser(userId) {
     try {
@@ -134,6 +179,18 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', async () =
     }
 });
 
+// NEW: Function to show Edit User Modal and populate fields
+function showEditUserModal(userId, fullName, email, role, isApproved) {
+    document.getElementById('editUserId').value = userId;
+    document.getElementById('editFullName').value = fullName;
+    document.getElementById('editEmail').value = email;
+    document.getElementById('editRole').value = role;
+    document.getElementById('editIsApproved').checked = isApproved;
+    document.getElementById('editUserFormMessage').style.display = 'none'; // Hide any previous message
+    const editUserModal = new bootstrap.Modal(document.getElementById('editUserModal'));
+    editUserModal.show();
+}
+
 
 // Event listener for DOM content loaded
 document.addEventListener('DOMContentLoaded', async function() {
@@ -142,4 +199,37 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Auto-refresh users list every 10 seconds
     setInterval(fetchAllUsers, 10000);
+
+    // NEW: Handle Edit User Form submission
+    document.getElementById('editUserForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const userId = document.getElementById('editUserId').value;
+        const fullName = document.getElementById('editFullName').value;
+        const email = document.getElementById('editEmail').value;
+        const role = document.getElementById('editRole').value;
+        const isApproved = document.getElementById('editIsApproved').checked;
+        const editUserFormMessageDiv = document.getElementById('editUserFormMessage');
+
+        editUserFormMessageDiv.style.display = 'none';
+        editUserFormMessageDiv.className = 'alert mt-3'; // Reset classes
+
+        if (!fullName || !email || !role) {
+            editUserFormMessageDiv.classList.add('alert-danger');
+            editUserFormMessageDiv.textContent = 'Please fill all required fields.';
+            editUserFormMessageDiv.style.display = 'block';
+            return;
+        }
+
+        try {
+            await updateUser(userId, fullName, email, role, isApproved);
+            // Close modal after successful update
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editUserModal'));
+            modal.hide();
+        } catch (error) {
+            console.error('Error submitting user edit:', error);
+            editUserFormMessageDiv.classList.add('alert-danger');
+            editUserFormMessageDiv.textContent = 'An unexpected error occurred while saving changes.';
+            editUserFormMessageDiv.style.display = 'block';
+        }
+    });
 });

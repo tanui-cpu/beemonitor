@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['simulate'])) {
     if (!$hive) {
         $_SESSION['alert_message'] = "Cannot simulate data: No beehives registered for your account. Please add one first!";
         $_SESSION['alert_type'] = "danger";
-        header("Location: beekeeper.php");
+        header("Location: beekeeper_dashboard.php");
         exit();
     }
 
@@ -200,7 +200,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="card p-3 mb-4">
         <h5>📈 Temperature & Humidity Trends Over Time</h5>
         <div class="chart-container-wrapper">
-            <canvas id="liveChart" height="300"></canvas>
+            <canvas id="liveChart" height="300"></canvas> <!-- Changed height from 100 to 300 -->
         </div>
     </div>
 
@@ -331,7 +331,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- NEW: Register Sensor Modal -->
+<!-- Register Sensor Modal -->
 <div class="modal fade" id="registerSensorModal" tabindex="-1" aria-labelledby="registerSensorModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -372,7 +372,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- NEW: Add Beehive Modal -->
+<!-- Add Beehive Modal -->
 <div class="modal fade" id="addBeehiveModal" tabindex="-1" aria-labelledby="addBeehiveModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -401,7 +401,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- NEW: Edit Beehive Modal -->
+<!-- Edit Beehive Modal -->
 <div class="modal fade" id="editBeehiveModal" tabindex="-1" aria-labelledby="editBeehiveModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -431,7 +431,49 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Generic Delete Confirmation Modal (used for reports, recommendations, and now beehives) -->
+<!-- NEW: Edit Sensor Modal -->
+<div class="modal fade" id="editSensorModal" tabindex="-1" aria-labelledby="editSensorModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editSensorModalLabel">Edit Sensor Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editSensorForm">
+                <input type="hidden" id="editSensorId">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="editSensorHiveSelect" class="form-label">Assigned Beehive:</label>
+                        <select class="form-select" id="editSensorHiveSelect" required>
+                            <option value="">Loading beehives...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editSensorSerialNumber" class="form-label">Sensor Serial Number:</label>
+                        <input type="text" class="form-control" id="editSensorSerialNumber" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editSensorType" class="form-label">Sensor Type:</label>
+                        <select class="form-select" id="editSensorType" required>
+                            <option value="combined">Combined (Temp, Hum, Weight)</option>
+                            <option value="temperature">Temperature Only</option>
+                            <option value="humidity">Humidity Only</option>
+                            <option value="weight">Weight Only</option>
+                        </select>
+                    </div>
+                    <div id="editSensorFormMessage" class="alert mt-3" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+<!-- Generic Delete Confirmation Modal (used for reports, recommendations, beehives, and now sensors) -->
 <div class="modal fade" id="genericDeleteConfirmModal" tabindex="-1" aria-labelledby="genericDeleteConfirmModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">

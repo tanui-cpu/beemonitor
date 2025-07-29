@@ -1,3 +1,7 @@
+// Ensure Chart.js is loaded before this script if it's used here
+// const ctx = document.getElementById('liveChart').getContext('2d'); // This line needs Chart.js
+// liveChart initialization and update logic
+
 // Initial Chart.js setup
 const ctx = document.getElementById('liveChart').getContext('2d');
 const liveChart = new Chart(ctx, {
@@ -397,13 +401,16 @@ async function fetchReceivedRecommendations() {
     }
 }
 
-// NEW: Function to fetch and populate beehives for the sensor registration dropdown
+// Function to fetch and populate beehives for the sensor registration dropdown
 async function fetchBeehivesForSensorRegistration() {
     try {
         const response = await fetch('backend.php?action=get_beehives_for_selection');
         const data = await response.json();
         const hiveSelect = document.getElementById('hiveSelect');
+        const editSensorHiveSelect = document.getElementById('editSensorHiveSelect'); // For edit modal
+        
         hiveSelect.innerHTML = '<option value="">Select a beehive</option>'; // Reset options
+        editSensorHiveSelect.innerHTML = '<option value="">Select a beehive</option>'; // Reset options for edit modal
 
         if (data.success && data.hives && data.hives.length > 0) {
             data.hives.forEach(hive => {
@@ -411,16 +418,24 @@ async function fetchBeehivesForSensorRegistration() {
                 option.value = hive.id;
                 option.textContent = htmlspecialchars(hive.hive_name);
                 hiveSelect.appendChild(option);
+
+                const editOption = option.cloneNode(true); // Clone for edit modal
+                editSensorHiveSelect.appendChild(editOption);
             });
             hiveSelect.disabled = false; // Enable if hives are found
+            editSensorHiveSelect.disabled = false; // Enable for edit modal
         } else {
             hiveSelect.innerHTML = '<option value="">No beehives found. Please add one first!</option>';
             hiveSelect.disabled = true; // Disable if no hives
+            editSensorHiveSelect.innerHTML = '<option value="">No beehives found.</option>';
+            editSensorHiveSelect.disabled = true;
         }
     } catch (error) {
         console.error('Error fetching beehives for sensor registration:', error);
         document.getElementById('hiveSelect').innerHTML = '<option value="">Error loading beehives</option>';
         document.getElementById('hiveSelect').disabled = true;
+        document.getElementById('editSensorHiveSelect').innerHTML = '<option value="">Error loading beehives</option>';
+        document.getElementById('editSensorHiveSelect').disabled = true;
     }
 }
 
@@ -428,7 +443,7 @@ async function fetchBeehivesForSensorRegistration() {
 async function fetchRegisteredSensors() {
     try {
         const response = await fetch('backend.php?action=get_registered_sensors');
-        const data = await await response.json();
+        const data = await response.json(); // Await the JSON parsing
         const registeredSensorsListDiv = document.getElementById('registeredSensorsList');
         registeredSensorsListDiv.innerHTML = ''; // Clear existing content
 
@@ -442,6 +457,7 @@ async function fetchRegisteredSensors() {
                         <th>Serial Number</th>
                         <th>Sensor Type</th>
                         <th>Registered On</th>
+                        <th>Actions</th> <!-- Added Actions column -->
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -455,16 +471,43 @@ async function fetchRegisteredSensors() {
                     <td>${htmlspecialchars(sensor.serial_number)}</td>
                     <td>${htmlspecialchars(sensor.sensor_type)}</td>
                     <td>${new Date(sensor.created_at).toLocaleString()}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info-custom edit-sensor-btn me-1"
+                            data-id="${sensor.id}"
+                            data-hive-id="${sensor.hive_id_fk}"
+                            data-serial-number="${htmlspecialchars(sensor.serial_number)}"
+                            data-sensor-type="${htmlspecialchars(sensor.sensor_type)}">Edit</button>
+                        <button class="btn btn-sm btn-danger delete-sensor-btn" data-id="${sensor.id}">Delete</button>
+                    </td>
                 `;
                 tbody.appendChild(tr);
             });
             registeredSensorsListDiv.appendChild(table);
+
+            // Add event listeners for new buttons
+            document.querySelectorAll('.edit-sensor-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const sensorId = event.target.dataset.id;
+                    const hiveId = event.target.dataset.hiveId;
+                    const serialNumber = event.target.dataset.serialNumber;
+                    const sensorType = event.target.dataset.sensorType;
+                    showEditSensorModal(sensorId, hiveId, serialNumber, sensorType);
+                });
+            });
+
+            document.querySelectorAll('.delete-sensor-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const sensorId = event.target.dataset.id;
+                    showDeleteConfirmModal('sensor', sensorId);
+                });
+            });
+
         } else {
             registeredSensorsListDiv.innerHTML = '<p class="text-center text-muted">No sensors registered yet.</p>';
         }
     } catch (error) {
         console.error('Error fetching registered sensors:', error);
-        document.getElementById('registeredSensorsList').innerHTML = '<p class="text-center text-danger">Failed to load registered sensors.</p>';
+        registeredSensorsListDiv.innerHTML = '<p class="text-center text-danger">Failed to load registered sensors.</p>';
     }
 }
 
@@ -520,6 +563,7 @@ async function deleteBeehive(hiveId) {
         if (data.success) {
             showBootstrapAlert('success', data.message || 'Beehive deleted successfully.');
             fetchBeehivesOverview(); // Refresh the list
+            fetchBeehivesForSensorRegistration(); // Also refresh hive dropdowns
         } else {
             showBootstrapAlert('danger', data.message || 'Failed to delete beehive.');
         }
@@ -529,9 +573,54 @@ async function deleteBeehive(hiveId) {
     }
 }
 
+// NEW: Function to update a sensor
+async function updateSensor(sensorId, hiveId, serialNumber, sensorType) {
+    try {
+        const response = await fetch('backend.php?action=update_sensor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sensor_id: sensorId,
+                hive_id: hiveId,
+                serial_number: serialNumber,
+                sensor_type: sensorType
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showBootstrapAlert('success', data.message || 'Sensor updated successfully.');
+            fetchRegisteredSensors(); // Refresh the list
+        } else {
+            showBootstrapAlert('danger', data.message || 'Failed to update sensor.');
+        }
+    } catch (error) {
+        console.error('Error updating sensor:', error);
+        showBootstrapAlert('danger', 'An error occurred while updating the sensor.');
+    }
+}
+
+// NEW: Function to delete a sensor
+async function deleteSensor(sensorId) {
+    try {
+        const response = await fetch(`backend.php?action=delete_sensor&id=${sensorId}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        if (data.success) {
+            showBootstrapAlert('success', data.message || 'Sensor deleted successfully.');
+            fetchRegisteredSensors(); // Refresh the list
+        } else {
+            showBootstrapAlert('danger', data.message || 'Failed to delete sensor.');
+        }
+    } catch (error) {
+        console.error('Error deleting sensor:', error);
+        showBootstrapAlert('danger', 'An error occurred while deleting the sensor.');
+    }
+}
+
 
 // Generic Delete Confirmation Modal Handler
-let deleteActionType = ''; // 'report', 'recommendation', 'beehive'
+let deleteActionType = ''; // 'report', 'recommendation', 'beehive', 'sensor'
 let deleteItemId = null;
 
 function showDeleteConfirmModal(type, itemId) {
@@ -549,13 +638,15 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', async () =
         await deleteReport(deleteItemId);
     } else if (deleteActionType === 'recommendation') {
         await deleteRecommendation(deleteItemId);
-    } else if (deleteActionType === 'beehive') { // Handle beehive deletion
+    } else if (deleteActionType === 'beehive') {
         await deleteBeehive(deleteItemId);
+    } else if (deleteActionType === 'sensor') { // Handle sensor deletion
+        await deleteSensor(deleteItemId);
     }
     deleteItemId = null; // Reset for next use
 });
 
-// NEW: Function to show Edit Beehive Modal and populate fields
+// Function to show Edit Beehive Modal and populate fields
 function showEditBeehiveModal(hiveId, hiveName, hiveLocation) {
     document.getElementById('editHiveId').value = hiveId;
     document.getElementById('editHiveName').value = hiveName;
@@ -563,6 +654,23 @@ function showEditBeehiveModal(hiveId, hiveName, hiveLocation) {
     document.getElementById('editBeehiveFormMessage').style.display = 'none'; // Hide any previous message
     const editBeehiveModal = new bootstrap.Modal(document.getElementById('editBeehiveModal'));
     editBeehiveModal.show();
+}
+
+// NEW: Function to show Edit Sensor Modal and populate fields
+async function showEditSensorModal(sensorId, hiveId, serialNumber, sensorType) {
+    document.getElementById('editSensorId').value = sensorId;
+    document.getElementById('editSensorSerialNumber').value = serialNumber;
+    document.getElementById('editSensorType').value = sensorType;
+
+    // Populate the beehive dropdown for the edit modal
+    await fetchBeehivesForSensorRegistration(); // This will populate both hiveSelect and editSensorHiveSelect
+
+    // Set the selected hive in the edit modal dropdown
+    document.getElementById('editSensorHiveSelect').value = hiveId;
+
+    document.getElementById('editSensorFormMessage').style.display = 'none'; // Hide any previous message
+    const editSensorModal = new bootstrap.Modal(document.getElementById('editSensorModal'));
+    editSensorModal.show();
 }
 
 
@@ -724,6 +832,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 addBeehiveFormMessageDiv.style.display = 'block';
                 document.getElementById('addBeehiveForm').reset(); // Clear form
                 fetchBeehivesOverview(); // Refresh beehives list
+                fetchBeehivesForSensorRegistration(); // Also refresh hive dropdowns in sensor modals
                 // Optionally close modal after success
                 setTimeout(() => {
                     const modal = bootstrap.Modal.getInstance(document.getElementById('addBeehiveModal'));
@@ -775,6 +884,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 editBeehiveFormMessageDiv.textContent = data.message || 'Beehive updated successfully!';
                 editBeehiveFormMessageDiv.style.display = 'block';
                 fetchBeehivesOverview(); // Refresh beehives list
+                fetchBeehivesForSensorRegistration(); // Also refresh hive dropdowns in sensor modals
                 // Optionally close modal after success
                 setTimeout(() => {
                     const modal = bootstrap.Modal.getInstance(document.getElementById('editBeehiveModal'));
@@ -792,6 +902,63 @@ document.addEventListener('DOMContentLoaded', async function() {
             editBeehiveFormMessageDiv.textContent = 'An unexpected error occurred while updating the beehive.';
             editBeehiveFormMessageDiv.style.display = 'block';
             showBootstrapAlert('danger', 'An unexpected error occurred while updating the beehive.'); // Show general alert
+        }
+    });
+
+    // NEW: Handle Edit Sensor Form submission
+    document.getElementById('editSensorForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const sensorId = document.getElementById('editSensorId').value;
+        const hiveId = document.getElementById('editSensorHiveSelect').value;
+        const serialNumber = document.getElementById('editSensorSerialNumber').value;
+        const sensorType = document.getElementById('editSensorType').value;
+        const editSensorFormMessageDiv = document.getElementById('editSensorFormMessage');
+
+        editSensorFormMessageDiv.style.display = 'none';
+        editSensorFormMessageDiv.className = 'alert mt-3'; // Reset classes
+
+        if (!sensorId || !hiveId || !serialNumber || !sensorType) {
+            editSensorFormMessageDiv.classList.add('alert-danger');
+            editSensorFormMessageDiv.textContent = 'Please fill all sensor fields.';
+            editSensorFormMessageDiv.style.display = 'block';
+            return;
+        }
+
+        try {
+            const response = await fetch('backend.php?action=update_sensor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sensor_id: sensorId,
+                    hive_id: hiveId,
+                    serial_number: serialNumber,
+                    sensor_type: sensorType
+                })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                editSensorFormMessageDiv.classList.add('alert-success');
+                editSensorFormMessageDiv.textContent = data.message || 'Sensor updated successfully!';
+                editSensorFormMessageDiv.style.display = 'block';
+                fetchRegisteredSensors(); // Refresh registered sensors list
+                // Optionally close modal after success
+                setTimeout(() => {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editSensorModal'));
+                    modal.hide();
+                }, 1500);
+            } else {
+                editSensorFormMessageDiv.classList.add('alert-danger');
+                editSensorFormMessageDiv.textContent = data.message || 'Failed to update sensor.';
+                editSensorFormMessageDiv.style.display = 'block';
+                showBootstrapAlert('danger', data.message || 'Failed to update sensor.'); // Show general alert
+            }
+        } catch (error) {
+            console.error('Error updating sensor:', error);
+            editSensorFormMessageDiv.classList.add('alert-danger');
+            editSensorFormMessageDiv.textContent = 'An unexpected error occurred while updating the sensor.';
+            editSensorFormMessageDiv.style.display = 'block';
+            showBootstrapAlert('danger', 'An unexpected error occurred while updating the sensor.'); // Show general alert
         }
     });
 });

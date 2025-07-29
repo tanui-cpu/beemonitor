@@ -93,6 +93,48 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     </div>
 </div>
 
+<!-- NEW: Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editUserModalLabel">Edit User Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editUserForm">
+                <input type="hidden" id="editUserId">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="editFullName" class="form-label">Full Name:</label>
+                        <input type="text" class="form-control" id="editFullName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editEmail" class="form-label">Email:</label>
+                        <input type="email" class="form-control" id="editEmail" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editRole" class="form-label">Role:</label>
+                        <select class="form-select" id="editRole" required>
+                            <option value="beekeeper">Beekeeper</option>
+                            <option value="officer">Officer</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="editIsApproved">
+                        <label class="form-check-label" for="editIsApproved">Approved</label>
+                    </div>
+                    <div id="editUserFormMessage" class="alert mt-3" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Generic Delete Confirmation Modal -->
 <div class="modal fade" id="genericDeleteConfirmModal" tabindex="-1" aria-labelledby="genericDeleteConfirmModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -112,6 +154,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     </div>
 </div>
 
-<script src="js/admin.js"></script> <!-- Dashboard specific JS -->
+<script src="js/admin_dashboard.js"></script> <!-- Dashboard specific JS -->
 </body>
 </html>

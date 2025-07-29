@@ -141,7 +141,7 @@ if (!in_array($action, ['register', 'login', 'logout'])) {
 }
 
 // Beekeeper-specific actions
-if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'simulate', 'get_alerts', 'send_report', 'get_reports', 'delete_report', 'get_recommendations', 'delete_recommendation', 'get_beehives_for_selection', 'register_sensor', 'get_registered_sensors', 'add_beehive', 'update_beehive', 'delete_beehive'])) {
+if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'simulate', 'get_alerts', 'send_report', 'get_reports', 'delete_report', 'get_recommendations', 'delete_recommendation', 'get_beehives_for_selection', 'register_sensor', 'get_registered_sensors', 'add_beehive', 'update_beehive', 'delete_beehive', 'update_sensor', 'delete_sensor'])) {
     if ($currentUserRole !== 'beekeeper') {
         http_response_code(403); // Forbidden
         sendJsonResponse(false, "Access Denied. You must be a beekeeper to perform this action.", "FORBIDDEN_ROLE");
@@ -149,7 +149,7 @@ if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'simulat
 }
 
 // Officer-specific actions
-if (in_array($action, ['get_reports_for_officer', 'add_recommendation', 'get_recommendations_by_officer', 'delete_report_officer', 'delete_recommendation_officer'])) {
+if (in_array($action, ['get_reports_for_officer', 'add_recommendation', 'get_recommendations_by_officer', 'delete_report_officer', 'delete_recommendation_officer', 'update_recommendation'])) { // Added 'update_recommendation'
     if ($currentUserRole !== 'officer') {
         http_response_code(403); // Forbidden
         sendJsonResponse(false, "Access Denied. You must be an officer to perform this action.", "FORBIDDEN_ROLE");
@@ -157,7 +157,7 @@ if (in_array($action, ['get_reports_for_officer', 'add_recommendation', 'get_rec
 }
 
 // Admin-specific actions
-if (in_array($action, ['get_all_users', 'approve_user', 'delete_user'])) {
+if (in_array($action, ['get_all_users', 'approve_user', 'delete_user', 'update_user'])) {
     if ($currentUserRole !== 'admin') {
         http_response_code(403); // Forbidden
         sendJsonResponse(false, "Access Denied. You must be an administrator to perform this action.", "FORBIDDEN_ROLE");
@@ -167,7 +167,7 @@ if (in_array($action, ['get_all_users', 'approve_user', 'delete_user'])) {
 
 // ---------------- BEEKEEPER DASHBOARD ACTIONS ----------------
 
-// NEW: Add a new beehive
+// Add a new beehive
 if ($action === 'add_beehive' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $hiveName = trim($data['hive_name'] ?? '');
     $location = trim($data['location'] ?? '');
@@ -186,7 +186,7 @@ if ($action === 'add_beehive' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// NEW: Update an existing beehive
+// Update an existing beehive
 if ($action === 'update_beehive' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $hiveId = $data['hive_id'] ?? null;
     $hiveName = trim($data['hive_name'] ?? '');
@@ -212,7 +212,7 @@ if ($action === 'update_beehive' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// NEW: Delete a beehive
+// Delete a beehive
 if ($action === 'delete_beehive' && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
     $hiveId = $_GET['id'] ?? null; // Get ID from query string for DELETE requests
 
@@ -528,7 +528,7 @@ if ($action === 'register_sensor' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($action === 'get_registered_sensors') {
     try {
         $stmt = $pdo->prepare("
-            SELECT s.id, s.serial_number, s.sensor_type, s.created_at, b.hive_name, b.location
+            SELECT s.id, s.serial_number, s.sensor_type, s.created_at, b.hive_name, b.location, b.id as hive_id_fk
             FROM sensors s
             JOIN beehives b ON s.hive_id = b.id
             WHERE b.user_id = ?
@@ -542,6 +542,95 @@ if ($action === 'get_registered_sensors') {
         sendJsonResponse(false, "Failed to retrieve registered sensors.", "DB_ERROR");
     }
 }
+
+// Update an existing sensor
+if ($action === 'update_sensor' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $sensorId = $data['sensor_id'] ?? null;
+    $hiveId = $data['hive_id'] ?? null;
+    $serialNumber = trim($data['serial_number'] ?? '');
+    $sensorType = trim($data['sensor_type'] ?? '');
+
+    if (!$sensorId || !$hiveId || !$serialNumber || !$sensorType) {
+        sendJsonResponse(false, "All sensor fields (ID, Hive ID, Serial Number, Type) are required.", "MISSING_FIELDS");
+    }
+
+    try {
+        // Validate that the sensor belongs to a hive owned by the current user
+        $sensorCheckStmt = $pdo->prepare("
+            SELECT s.id
+            FROM sensors s
+            JOIN beehives b ON s.hive_id = b.id
+            WHERE s.id = ? AND b.user_id = ?
+        ");
+        $sensorCheckStmt->execute([$sensorId, $currentUserId]);
+        if ($sensorCheckStmt->rowCount() === 0) {
+            sendJsonResponse(false, "Sensor not found or you do not have permission to update it.", "SENSOR_NOT_FOUND_OR_UNAUTHORIZED");
+        }
+
+        // Validate that the new hive_id (if changed) also belongs to the current user
+        $hiveCheckStmt = $pdo->prepare("SELECT id FROM beehives WHERE id = ? AND user_id = ?");
+        $hiveCheckStmt->execute([$hiveId, $currentUserId]);
+        if ($hiveCheckStmt->rowCount() === 0) {
+            sendJsonResponse(false, "Invalid new Hive ID or you do not own this hive.", "INVALID_HIVE_ID");
+        }
+
+        // Check if the new serial number is already taken by another sensor (excluding the current one)
+        $serialCheckStmt = $pdo->prepare("SELECT id FROM sensors WHERE serial_number = ? AND id != ?");
+        $serialCheckStmt->execute([$serialNumber, $sensorId]);
+        if ($serialCheckStmt->rowCount() > 0) {
+            sendJsonResponse(false, "Sensor with this serial number already exists.", "DUPLICATE_SERIAL");
+        }
+
+        $stmt = $pdo->prepare("UPDATE sensors SET hive_id = ?, serial_number = ?, sensor_type = ? WHERE id = ?");
+        $stmt->execute([$hiveId, $serialNumber, $sensorType, $sensorId]);
+
+        if ($stmt->rowCount() > 0) {
+            sendJsonResponse(true, "Sensor updated successfully.");
+        } else {
+            // This could mean sensor not found or no changes were made
+            sendJsonResponse(false, "Sensor not found or no changes were made.", "NO_CHANGES_OR_NOT_FOUND");
+        }
+    } catch (PDOException $e) {
+        error_log("Update sensor error: " . $e->getMessage());
+        sendJsonResponse(false, "Failed to update sensor: " . $e->getMessage(), "DB_ERROR");
+    }
+}
+
+// Delete a sensor
+if ($action === 'delete_sensor' && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
+    $sensorId = $_GET['id'] ?? null; // Get ID from query string for DELETE requests
+
+    if (!$sensorId) {
+        sendJsonResponse(false, "Sensor ID is required.", "MISSING_ID");
+    }
+
+    try {
+        // Validate that the sensor belongs to a hive owned by the current user before deleting
+        $sensorCheckStmt = $pdo->prepare("
+            SELECT s.id
+            FROM sensors s
+            JOIN beehives b ON s.hive_id = b.id
+            WHERE s.id = ? AND b.user_id = ?
+        ");
+        $sensorCheckStmt->execute([$sensorId, $currentUserId]);
+        if ($sensorCheckStmt->rowCount() === 0) {
+            sendJsonResponse(false, "Sensor not found or you do not have permission to delete it.", "SENSOR_NOT_FOUND_OR_UNAUTHORIZED");
+        }
+
+        $stmt = $pdo->prepare("DELETE FROM sensors WHERE id = ?");
+        $stmt->execute([$sensorId]);
+
+        if ($stmt->rowCount() > 0) {
+            sendJsonResponse(true, "Sensor deleted successfully.");
+        } else {
+            sendJsonResponse(false, "Sensor not found.", "SENSOR_NOT_FOUND");
+        }
+    } catch (PDOException $e) {
+        error_log("Delete sensor error: " . $e->getMessage());
+        sendJsonResponse(false, "Failed to delete sensor: " . $e->getMessage(), "DB_ERROR");
+    }
+}
+
 
 // ---------------- OFFICER DASHBOARD ACTIONS ----------------
 
@@ -611,6 +700,32 @@ if ($action === 'add_recommendation' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         sendJsonResponse(false, "Failed to add recommendation: " . $e->getMessage(), "DB_ERROR");
     }
 }
+
+// NEW: Update an existing recommendation (Officer only)
+if ($action === 'update_recommendation' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $recommendationId = $data['recommendation_id'] ?? null;
+    $message = trim($data['message'] ?? '');
+
+    if (!$recommendationId || !$message) {
+        sendJsonResponse(false, "Recommendation ID and message are required.", "MISSING_FIELDS");
+    }
+
+    try {
+        // Ensure the recommendation belongs to the current officer before updating
+        $stmt = $pdo->prepare("UPDATE recommendations SET message = ? WHERE id = ? AND officer_id = ?");
+        $stmt->execute([$message, $recommendationId, $currentUserId]);
+
+        if ($stmt->rowCount() > 0) {
+            sendJsonResponse(true, "Recommendation updated successfully.");
+        } else {
+            sendJsonResponse(false, "Recommendation not found or you don't have permission to update it.", "NOT_FOUND_OR_UNAUTHORIZED");
+        }
+    } catch (PDOException $e) {
+        error_log("Update recommendation error: " . $e->getMessage());
+        sendJsonResponse(false, "Failed to update recommendation: " . $e->getMessage(), "DB_ERROR");
+    }
+}
+
 
 // Get recommendations sent by the current officer
 if ($action === 'get_recommendations_by_officer') {
@@ -699,7 +814,7 @@ if ($action === 'delete_recommendation_officer' && $_SERVER['REQUEST_METHOD'] ==
 
 // ---------------- ADMIN DASHBOARD ACTIONS ----------------
 
-// NEW: Get all users for admin dashboard
+// Get all users for admin dashboard
 if ($action === 'get_all_users') {
     try {
         $stmt = $pdo->prepare("SELECT id, full_name, email, role, is_approved FROM users ORDER BY created_at DESC");
@@ -712,7 +827,7 @@ if ($action === 'get_all_users') {
     }
 }
 
-// NEW: Approve a user
+// Approve a user
 if ($action === 'approve_user' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $userIdToApprove = $data['user_id'] ?? null;
 
@@ -734,7 +849,54 @@ if ($action === 'approve_user' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// NEW: Delete a user
+// Update a user's details (Admin only)
+if ($action === 'update_user' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $userId = $data['user_id'] ?? null;
+    $fullName = trim($data['full_name'] ?? '');
+    $email = trim($data['email'] ?? '');
+    $role = trim($data['role'] ?? '');
+    $isApproved = $data['is_approved'] ?? null; // Comes as 0 or 1
+
+    // Basic validation
+    if (!$userId || !$fullName || !$email || !$role || !isset($isApproved)) {
+        sendJsonResponse(false, "All user fields (ID, Name, Email, Role, Approved Status) are required.", "MISSING_FIELDS");
+    }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        sendJsonResponse(false, "Invalid email address format.", "INVALID_EMAIL_FORMAT");
+    }
+    if (!in_array($role, ['beekeeper', 'officer', 'admin'])) {
+        sendJsonResponse(false, "Invalid role specified.", "INVALID_ROLE");
+    }
+
+    try {
+        // Prevent changing own role or approval status if it would lock out the admin
+        if ($userId == $currentUserId && ($role !== 'admin' || $isApproved == 0)) {
+            sendJsonResponse(false, "You cannot change your own role to non-admin or unapprove your own account.", "SELF_EDIT_FORBIDDEN");
+        }
+
+        // Check if the new email is already taken by another user
+        $emailCheckStmt = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
+        $emailCheckStmt->execute([$email, $userId]);
+        if ($emailCheckStmt->rowCount() > 0) {
+            sendJsonResponse(false, "Email is already taken by another user.", "EMAIL_TAKEN");
+        }
+
+        $stmt = $pdo->prepare("UPDATE users SET full_name = ?, email = ?, role = ?, is_approved = ? WHERE id = ?");
+        $stmt->execute([$fullName, $email, $role, $isApproved, $userId]);
+
+        if ($stmt->rowCount() > 0) {
+            sendJsonResponse(true, "User updated successfully.");
+        } else {
+            // This could mean user not found or no changes were made
+            sendJsonResponse(false, "User not found or no changes were made.", "NO_CHANGES_OR_NOT_FOUND");
+        }
+    } catch (PDOException $e) {
+        error_log("Update user error: " . $e->getMessage());
+        sendJsonResponse(false, "Failed to update user: " . $e->getMessage(), "DB_ERROR");
+    }
+}
+
+// Delete a user
 if ($action === 'delete_user' && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
     $userIdToDelete = $_GET['id'] ?? null; // Get ID from query string for DELETE requests
 

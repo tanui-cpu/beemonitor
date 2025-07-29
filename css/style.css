@@ -38,7 +38,7 @@ body.about-page-bg {
 .navbar-custom .navbar-brand,
 .navbar-custom .nav-link,
 .navbar-custom .me-3 {
-    color: white !important;
+    color: rgba(255, 247, 247, 0.975) !important;
     font-weight: bold;
 }
 .navbar-custom .btn-outline-light {
@@ -87,12 +87,12 @@ body.about-page-bg {
     background-color: rgba(0,0,0,0.2);
 }
 .navbar-index a.nav-link, .navbar-index .navbar-brand {
-    color: #fff !important;
+    color: #fffefe !important;
     font-weight: 600;
 }
 .navbar-index a.nav-link:hover {
     color: #333 !important;
-    background: #fff !important;
+    background: #fffdfd !important;
     border-radius: 5px;
 }
 

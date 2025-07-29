@@ -1,4 +1,4 @@
-// Function to fetch and display beekeeper reports
+// Function to fetch and display beekeeper reports for the officer
 async function fetchBeekeeperReports() {
     try {
         const response = await fetch('backend.php?action=get_reports_for_officer');
@@ -12,13 +12,10 @@ async function fetchBeekeeperReports() {
             table.innerHTML = `
                 <thead>
                     <tr>
-                        <th>Report ID</th>
                         <th>Beekeeper</th>
-                        <th>Hive</th>
-                        <th>Message</th>
+                        <th>Report Message</th>
                         <th>Date</th>
-                        <th>Recommendations</th>
-                        <th>Action</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -28,28 +25,25 @@ async function fetchBeekeeperReports() {
             data.reports.forEach(report => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${htmlspecialchars(report.report_id)}</td>
                     <td>${htmlspecialchars(report.beekeeper_name)} (${htmlspecialchars(report.beekeeper_email)})</td>
-                    <td>${htmlspecialchars(report.hive_name || 'N/A')} (${htmlspecialchars(report.location || 'N/A')})</td>
                     <td>${htmlspecialchars(report.report_message.substring(0, 100))}...</td>
                     <td>${new Date(report.report_created_at).toLocaleString()}</td>
-                    <td>${htmlspecialchars(report.recommendations_text || 'None')}</td>
                     <td>
-                        <button class="btn btn-sm btn-info-custom view-report-btn me-1"
-                            data-report-id="${report.report_id}"
+                        <button class="btn btn-sm btn-info-custom view-report-details-btn me-1"
+                            data-id="${report.report_id}"
                             data-beekeeper-name="${htmlspecialchars(report.beekeeper_name)}"
                             data-beekeeper-email="${htmlspecialchars(report.beekeeper_email)}"
                             data-hive-name="${htmlspecialchars(report.hive_name || 'N/A')}"
                             data-hive-location="${htmlspecialchars(report.location || 'N/A')}"
                             data-date="${new Date(report.report_created_at).toLocaleString()}"
                             data-message="${htmlspecialchars(report.report_message)}"
-                            data-recommendations="${htmlspecialchars(report.recommendations_text || 'None')}">View</button>
+                            data-recommendations="${htmlspecialchars(report.recommendations_text || 'No recommendations yet.')}">View</button>
                         <button class="btn btn-sm btn-primary-custom add-recommendation-btn me-1"
                             data-report-id="${report.report_id}"
                             data-beekeeper-name="${htmlspecialchars(report.beekeeper_name)}"
                             data-beekeeper-email="${htmlspecialchars(report.beekeeper_email)}"
                             data-report-message="${htmlspecialchars(report.report_message)}">Add Rec</button>
-                        <button class="btn btn-sm btn-danger delete-report-btn" data-id="${report.report_id}">Delete</button>
+                        <button class="btn btn-sm btn-danger delete-report-officer-btn" data-id="${report.report_id}">Delete</button>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -57,42 +51,48 @@ async function fetchBeekeeperReports() {
             reportsListDiv.appendChild(table);
 
             // Add event listeners for buttons
-            document.querySelectorAll('.view-report-btn').forEach(button => {
-                button.addEventListener('click', (event) => {
-                    document.getElementById('viewReportDetailsBeekeeperName').textContent = event.target.dataset.beekeeperName;
-                    document.getElementById('viewReportDetailsBeekeeperEmail').textContent = event.target.dataset.beekeeperEmail;
-                    document.getElementById('viewReportDetailsHiveName').textContent = event.target.dataset.hiveName;
-                    document.getElementById('viewReportDetailsHiveLocation').textContent = event.target.dataset.hiveLocation;
-                    document.getElementById('viewReportDetailsDate').textContent = event.target.dataset.date;
-                    document.getElementById('viewReportDetailsMessage').textContent = event.target.dataset.message;
-                    document.getElementById('viewReportDetailsRecommendations').textContent = event.target.dataset.recommendations;
-                    const viewModal = new bootstrap.Modal(document.getElementById('viewReportDetailsModal'));
-                    viewModal.show();
-                });
-            });
-
             document.querySelectorAll('.add-recommendation-btn').forEach(button => {
                 button.addEventListener('click', (event) => {
-                    document.getElementById('recommendationReportId').value = event.target.dataset.reportId;
-                    document.getElementById('recommendationBeekeeperName').textContent = event.target.dataset.beekeeperName;
-                    document.getElementById('recommendationBeekeeperEmail').textContent = event.target.dataset.beekeeperEmail;
-                    document.getElementById('recommendationReportMessage').textContent = event.target.dataset.reportMessage;
-                    document.getElementById('recommendationMessage').value = ''; // Clear previous message
-                    document.getElementById('addRecommendationFormMessage').style.display = 'none'; // Hide previous alert
-                    const addRecModal = new bootstrap.Modal(document.getElementById('addRecommendationModal'));
-                    addRecModal.show();
+                    const reportId = event.target.dataset.reportId;
+                    const beekeeperName = event.target.dataset.beekeeperName;
+                    const beekeeperEmail = event.target.dataset.beekeeperEmail;
+                    const reportMessage = event.target.dataset.reportMessage;
+                    showAddRecommendationModal(reportId, beekeeperName, beekeeperEmail, reportMessage);
                 });
             });
 
-            document.querySelectorAll('.delete-report-btn').forEach(button => {
+            document.querySelectorAll('.delete-report-officer-btn').forEach(button => {
                 button.addEventListener('click', (event) => {
                     const reportId = event.target.dataset.id;
                     showDeleteConfirmModal('report_officer', reportId);
                 });
             });
 
+            document.querySelectorAll('.view-report-details-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const beekeeperName = event.target.dataset.beekeeperName;
+                    const beekeeperEmail = event.target.dataset.beekeeperEmail;
+                    const hiveName = event.target.dataset.hiveName;
+                    const hiveLocation = event.target.dataset.hiveLocation;
+                    const date = event.target.dataset.date;
+                    const message = event.target.dataset.message;
+                    const recommendations = event.target.dataset.recommendations;
+
+                    document.getElementById('viewReportDetailsBeekeeperName').textContent = beekeeperName;
+                    document.getElementById('viewReportDetailsBeekeeperEmail').textContent = beekeeperEmail;
+                    document.getElementById('viewReportDetailsHiveName').textContent = hiveName;
+                    document.getElementById('viewReportDetailsHiveLocation').textContent = hiveLocation;
+                    document.getElementById('viewReportDetailsDate').textContent = date;
+                    document.getElementById('viewReportDetailsMessage').textContent = message;
+                    document.getElementById('viewReportDetailsRecommendations').textContent = recommendations;
+
+                    const viewModal = new bootstrap.Modal(document.getElementById('viewReportDetailsModal'));
+                    viewModal.show();
+                });
+            });
+
         } else {
-            reportsListDiv.innerHTML = '<p class="text-center text-muted">No reports found.</p>';
+            reportsListDiv.innerHTML = '<p class="text-center text-muted">No beekeeper reports received yet.</p>';
         }
     } catch (error) {
         console.error('Error fetching beekeeper reports:', error);
@@ -100,111 +100,7 @@ async function fetchBeekeeperReports() {
     }
 }
 
-// Function to fetch and display recommendations sent by the officer
-async function fetchOfficerRecommendations() {
-    try {
-        const response = await fetch('backend.php?action=get_recommendations_by_officer');
-        const data = await response.json();
-        const officerRecommendationsListDiv = document.getElementById('officerRecommendationsList');
-        officerRecommendationsListDiv.innerHTML = ''; // Clear existing content
-
-        if (data.success && data.recommendations && data.recommendations.length > 0) {
-            const table = document.createElement('table');
-            table.className = 'table table-striped table-hover';
-            table.innerHTML = `
-                <thead>
-                    <tr>
-                        <th>To Beekeeper</th>
-                        <th>Message</th>
-                        <th>Related Report</th>
-                        <th>Related Sensor Data</th>
-                        <th>Date Sent</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            `;
-            const tbody = table.querySelector('tbody');
-
-            data.recommendations.forEach(rec => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${htmlspecialchars(rec.beekeeper_name)} (${htmlspecialchars(rec.beekeeper_email)})</td>
-                    <td>${htmlspecialchars(rec.message.substring(0, 100))}...</td>
-                    <td>${htmlspecialchars(rec.related_report_message ? rec.related_report_message.substring(0, 50) + '...' : 'N/A')}</td>
-                    <td>${rec.temperature !== null ? `Temp: ${htmlspecialchars(rec.temperature)}°C, Hum: ${htmlspecialchars(rec.humidity)}%, Weight: ${htmlspecialchars(rec.weight)}kg` : 'N/A'}</td>
-                    <td>${new Date(rec.created_at).toLocaleString()}</td>
-                    <td>
-                        <button class="btn btn-sm btn-info-custom view-officer-recommendation-btn me-1"
-                            data-beekeeper-name="${htmlspecialchars(rec.beekeeper_name)}"
-                            data-beekeeper-email="${htmlspecialchars(rec.beekeeper_email)}"
-                            data-date="${new Date(rec.created_at).toLocaleString()}"
-                            data-message="${htmlspecialchars(rec.message)}"
-                            data-related-report="${htmlspecialchars(rec.related_report_message || 'N/A')}"
-                            data-temp="${htmlspecialchars(rec.temperature || 'N/A')}"
-                            data-humidity="${htmlspecialchars(rec.humidity || 'N/A')}"
-                            data-weight="${htmlspecialchars(rec.weight || 'N/A')}">View</button>
-                        <button class="btn btn-sm btn-danger delete-recommendation-officer-btn" data-id="${rec.id}">Delete</button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-            officerRecommendationsListDiv.appendChild(table);
-
-            // Add event listeners for delete buttons
-            document.querySelectorAll('.delete-recommendation-officer-btn').forEach(button => {
-                button.addEventListener('click', (event) => {
-                    const recId = event.target.dataset.id;
-                    showDeleteConfirmModal('recommendation_officer', recId);
-                });
-            });
-
-            // Add event listeners for view buttons
-            document.querySelectorAll('.view-officer-recommendation-btn').forEach(button => {
-                button.addEventListener('click', (event) => {
-                    document.getElementById('viewOfficerRecommendationBeekeeperName').textContent = event.target.dataset.beekeeperName;
-                    document.getElementById('viewOfficerRecommendationBeekeeperEmail').textContent = event.target.dataset.beekeeperEmail;
-                    document.getElementById('viewOfficerRecommendationDate').textContent = event.target.dataset.date;
-                    document.getElementById('viewOfficerRecommendationMessage').textContent = event.target.dataset.message;
-                    document.getElementById('viewOfficerRecommendationRelatedReport').textContent = event.target.dataset.relatedReport;
-                    document.getElementById('viewOfficerRecommendationSensorData').textContent = `Temp: ${event.target.dataset.temp}°C, Hum: ${event.target.dataset.humidity}%, Weight: ${event.target.dataset.weight}kg`;
-
-                    const viewRecModal = new bootstrap.Modal(document.getElementById('viewOfficerRecommendationModal'));
-                    viewRecModal.show();
-                });
-            });
-
-        } else {
-            officerRecommendationsListDiv.innerHTML = '<p class="text-center text-muted">No recommendations sent yet.</p>';
-        }
-    } catch (error) {
-        console.error('Error fetching officer recommendations:', error);
-        officerRecommendationsListDiv.innerHTML = '<p class="text-center text-danger">Failed to load recommendations.</p>';
-    }
-}
-
-// Generic Delete Confirmation Modal Handler
-let deleteActionType = ''; // 'report_officer' or 'recommendation_officer'
-let deleteItemId = null;
-
-function showDeleteConfirmModal(type, itemId) {
-    deleteActionType = type;
-    deleteItemId = itemId;
-    const modal = new bootstrap.Modal(document.getElementById('genericDeleteConfirmModal'));
-    modal.show();
-}
-
-document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
-    const modal = bootstrap.Modal.getInstance(document.getElementById('genericDeleteConfirmModal'));
-    modal.hide(); // Hide the modal immediately
-
-    if (deleteActionType === 'report_officer') {
-        await deleteReportOfficer(deleteItemId);
-    } else if (deleteActionType === 'recommendation_officer') {
-        await deleteRecommendationOfficer(deleteItemId);
-    }
-});
-
+// Function to delete a report (officer's view)
 async function deleteReportOfficer(reportId) {
     try {
         const response = await fetch(`backend.php?action=delete_report_officer&id=${reportId}`, {
@@ -223,6 +119,115 @@ async function deleteReportOfficer(reportId) {
     }
 }
 
+// Function to fetch and display recommendations sent by the current officer
+async function fetchOfficerRecommendations() {
+    try {
+        const response = await fetch('backend.php?action=get_recommendations_by_officer');
+        const data = await response.json();
+        const officerRecommendationsListDiv = document.getElementById('officerRecommendationsList');
+        officerRecommendationsListDiv.innerHTML = ''; // Clear existing content
+
+        if (data.success && data.recommendations && data.recommendations.length > 0) {
+            const table = document.createElement('table');
+            table.className = 'table table-striped table-hover';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>To Beekeeper</th>
+                        <th>Message</th>
+                        <th>Related Report</th>
+                        <th>Related Sensor Data</th>
+                        <th>Date Sent</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            `;
+            const tbody = table.querySelector('tbody');
+
+            data.recommendations.forEach(rec => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${htmlspecialchars(rec.beekeeper_name)} (${htmlspecialchars(rec.beekeeper_email)})</td>
+                    <td>${htmlspecialchars(rec.message.substring(0, 100))}...</td>
+                    <td>${rec.related_report_message ? htmlspecialchars(rec.related_report_message.substring(0, 50)) + '...' : 'N/A'}</td>
+                    <td>Temp: ${rec.temperature !== null ? htmlspecialchars(rec.temperature) + '°C' : 'N/A'}, Hum: ${rec.humidity !== null ? htmlspecialchars(rec.humidity) + '%' : 'N/A'}, Weight: ${rec.weight !== null ? htmlspecialchars(rec.weight.toFixed(2)) + 'kg' : 'N/A'}</td>
+                    <td>${new Date(rec.created_at).toLocaleString()}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info-custom view-officer-recommendation-btn me-1"
+                            data-id="${rec.id}"
+                            data-beekeeper-name="${htmlspecialchars(rec.beekeeper_name)}"
+                            data-beekeeper-email="${htmlspecialchars(rec.beekeeper_email)}"
+                            data-date="${new Date(rec.created_at).toLocaleString()}"
+                            data-message="${htmlspecialchars(rec.message)}"
+                            data-related-report="${htmlspecialchars(rec.related_report_message || 'N/A')}"
+                            data-temp="${htmlspecialchars(rec.temperature)}"
+                            data-humidity="${htmlspecialchars(rec.humidity)}"
+                            data-weight="${htmlspecialchars(rec.weight)}">View</button>
+                        <button class="btn btn-sm btn-primary-custom edit-recommendation-btn me-1"
+                            data-id="${rec.id}"
+                            data-beekeeper-name="${htmlspecialchars(rec.beekeeper_name)}"
+                            data-related-report="${htmlspecialchars(rec.related_report_message || 'N/A')}"
+                            data-message="${htmlspecialchars(rec.message)}">Edit</button>
+                        <button class="btn btn-sm btn-danger delete-recommendation-officer-btn" data-id="${rec.id}">Delete</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+            officerRecommendationsListDiv.appendChild(table);
+
+            // Add event listeners for buttons
+            document.querySelectorAll('.delete-recommendation-officer-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const recId = event.target.dataset.id;
+                    showDeleteConfirmModal('recommendation_officer', recId);
+                });
+            });
+
+            document.querySelectorAll('.view-officer-recommendation-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const beekeeperName = event.target.dataset.beekeeperName;
+                    const beekeeperEmail = event.target.dataset.beekeeperEmail;
+                    const date = event.target.dataset.date;
+                    const message = event.target.dataset.message;
+                    const relatedReport = event.target.dataset.relatedReport;
+                    const temp = event.target.dataset.temp;
+                    const humidity = event.target.dataset.humidity;
+                    const weight = event.target.dataset.weight;
+
+                    document.getElementById('viewOfficerRecommendationBeekeeperName').textContent = beekeeperName;
+                    document.getElementById('viewOfficerRecommendationBeekeeperEmail').textContent = beekeeperEmail;
+                    document.getElementById('viewOfficerRecommendationDate').textContent = date;
+                    document.getElementById('viewOfficerRecommendationMessage').textContent = message;
+                    document.getElementById('viewOfficerRecommendationRelatedReport').textContent = relatedReport;
+                    document.getElementById('viewOfficerRecommendationSensorData').textContent = `Temp: ${temp}°C, Hum: ${humidity}%, Weight: ${weight}kg`;
+
+                    const viewRecModal = new bootstrap.Modal(document.getElementById('viewOfficerRecommendationModal'));
+                    viewRecModal.show();
+                });
+            });
+
+            // NEW: Add event listeners for edit buttons
+            document.querySelectorAll('.edit-recommendation-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const recId = event.target.dataset.id;
+                    const beekeeperName = event.target.dataset.beekeeperName;
+                    const relatedReport = event.target.dataset.relatedReport;
+                    const message = event.target.dataset.message;
+                    showEditRecommendationModal(recId, beekeeperName, relatedReport, message);
+                });
+            });
+
+        } else {
+            officerRecommendationsListDiv.innerHTML = '<p class="text-center text-muted">No recommendations sent yet.</p>';
+        }
+    } catch (error) {
+        console.error('Error fetching officer recommendations:', error);
+        officerRecommendationsListDiv.innerHTML = '<p class="text-center text-danger">Failed to load recommendations.</p>';
+    }
+}
+
+// Function to delete a recommendation (officer's view)
 async function deleteRecommendationOfficer(recommendationId) {
     try {
         const response = await fetch(`backend.php?action=delete_recommendation_officer&id=${recommendationId}`, {
@@ -241,14 +246,61 @@ async function deleteRecommendationOfficer(recommendationId) {
     }
 }
 
+// Function to show Add Recommendation Modal
+function showAddRecommendationModal(reportId, beekeeperName, beekeeperEmail, reportMessage) {
+    document.getElementById('recommendationReportId').value = reportId;
+    document.getElementById('recommendationBeekeeperName').textContent = beekeeperName;
+    document.getElementById('recommendationBeekeeperEmail').textContent = beekeeperEmail;
+    document.getElementById('recommendationReportMessage').textContent = reportMessage;
+    document.getElementById('recommendationMessage').value = ''; // Clear previous message
+    document.getElementById('addRecommendationFormMessage').style.display = 'none'; // Hide any previous message
+    const addModal = new bootstrap.Modal(document.getElementById('addRecommendationModal'));
+    addModal.show();
+}
 
-// Event listeners and initial data loads
+// NEW: Function to show Edit Recommendation Modal and populate fields
+function showEditRecommendationModal(recommendationId, beekeeperName, relatedReport, message) {
+    document.getElementById('editRecommendationId').value = recommendationId;
+    document.getElementById('editRecommendationBeekeeperName').textContent = beekeeperName;
+    document.getElementById('editRecommendationRelatedReport').textContent = relatedReport;
+    document.getElementById('editRecommendationMessage').value = message;
+    document.getElementById('editRecommendationFormMessage').style.display = 'none'; // Hide any previous message
+    const editModal = new bootstrap.Modal(document.getElementById('editRecommendationModal'));
+    editModal.show();
+}
+
+
+// Generic Delete Confirmation Modal Handler
+let deleteActionType = ''; // 'report_officer', 'recommendation_officer'
+let deleteItemId = null;
+
+function showDeleteConfirmModal(type, itemId) {
+    deleteActionType = type;
+    deleteItemId = itemId;
+    const modal = new bootstrap.Modal(document.getElementById('genericDeleteConfirmModal'));
+    modal.show();
+}
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('genericDeleteConfirmModal'));
+    modal.hide(); // Hide the modal immediately
+
+    if (deleteActionType === 'report_officer') {
+        await deleteReportOfficer(deleteItemId);
+    } else if (deleteActionType === 'recommendation_officer') {
+        await deleteRecommendationOfficer(deleteItemId);
+    }
+    deleteItemId = null; // Reset for next use
+});
+
+
+// Event listeners for DOM content loaded
 document.addEventListener('DOMContentLoaded', async function() {
     // Initial data fetches
     await fetchBeekeeperReports();
     await fetchOfficerRecommendations();
 
-    // Auto-refresh reports and recommendations every 10 seconds
+    // Auto-refresh lists every 10 seconds
     setInterval(fetchBeekeeperReports, 10000);
     setInterval(fetchOfficerRecommendations, 10000);
 
@@ -257,15 +309,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         event.preventDefault();
         const reportId = document.getElementById('recommendationReportId').value;
         const message = document.getElementById('recommendationMessage').value;
-        const formMessageDiv = document.getElementById('addRecommendationFormMessage');
+        const addRecommendationFormMessageDiv = document.getElementById('addRecommendationFormMessage');
 
-        formMessageDiv.style.display = 'none';
-        formMessageDiv.className = 'alert mt-3'; // Reset classes
+        addRecommendationFormMessageDiv.style.display = 'none';
+        addRecommendationFormMessageDiv.className = 'alert mt-3'; // Reset classes
 
         if (!reportId || !message) {
-            formMessageDiv.classList.add('alert-danger');
-            formMessageDiv.textContent = 'Report ID and message are required.';
-            formMessageDiv.style.display = 'block';
+            addRecommendationFormMessageDiv.classList.add('alert-danger');
+            addRecommendationFormMessageDiv.textContent = 'Report ID and message are required.';
+            addRecommendationFormMessageDiv.style.display = 'block';
             return;
         }
 
@@ -278,27 +330,79 @@ document.addEventListener('DOMContentLoaded', async function() {
             const data = await response.json();
 
             if (data.success) {
-                formMessageDiv.classList.add('alert-success');
-                formMessageDiv.textContent = data.message || 'Recommendation added successfully!';
-                formMessageDiv.style.display = 'block';
+                addRecommendationFormMessageDiv.classList.add('alert-success');
+                addRecommendationFormMessageDiv.textContent = data.message || 'Recommendation added successfully!';
+                addRecommendationFormMessageDiv.style.display = 'block';
                 document.getElementById('addRecommendationForm').reset(); // Clear form
-                fetchBeekeeperReports(); // Refresh reports list
-                fetchOfficerRecommendations(); // Refresh officer's recommendations list
+                fetchOfficerRecommendations(); // Refresh recommendations list
+                fetchBeekeeperReports(); // Refresh reports list as well, to show new recommendation
                 // Optionally close modal after success
                 setTimeout(() => {
                     const modal = bootstrap.Modal.getInstance(document.getElementById('addRecommendationModal'));
                     modal.hide();
                 }, 1500);
             } else {
-                formMessageDiv.classList.add('alert-danger');
-                formMessageDiv.textContent = data.message || 'Failed to add recommendation.';
-                formMessageDiv.style.display = 'block';
+                addRecommendationFormMessageDiv.classList.add('alert-danger');
+                addRecommendationFormMessageDiv.textContent = data.message || 'Failed to add recommendation.';
+                addRecommendationFormMessageDiv.style.display = 'block';
+                showBootstrapAlert('danger', data.message || 'Failed to add recommendation.'); // Show general alert
             }
         } catch (error) {
             console.error('Error adding recommendation:', error);
-            formMessageDiv.classList.add('alert-danger');
-            formMessageDiv.textContent = 'An unexpected error occurred while adding the recommendation.';
-            formMessageDiv.style.display = 'block';
+            addRecommendationFormMessageDiv.classList.add('alert-danger');
+            addRecommendationFormMessageDiv.textContent = 'An unexpected error occurred while adding the recommendation.';
+            addRecommendationFormMessageDiv.style.display = 'block';
+            showBootstrapAlert('danger', 'An unexpected error occurred while adding the recommendation.'); // Show general alert
+        }
+    });
+
+    // NEW: Handle Edit Recommendation Form submission
+    document.getElementById('editRecommendationForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const recommendationId = document.getElementById('editRecommendationId').value;
+        const message = document.getElementById('editRecommendationMessage').value;
+        const editRecommendationFormMessageDiv = document.getElementById('editRecommendationFormMessage');
+
+        editRecommendationFormMessageDiv.style.display = 'none';
+        editRecommendationFormMessageDiv.className = 'alert mt-3'; // Reset classes
+
+        if (!recommendationId || !message) {
+            editRecommendationFormMessageDiv.classList.add('alert-danger');
+            editRecommendationFormMessageDiv.textContent = 'Recommendation ID and message are required.';
+            editRecommendationFormMessageDiv.style.display = 'block';
+            return;
+        }
+
+        try {
+            const response = await fetch('backend.php?action=update_recommendation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recommendation_id: recommendationId, message: message })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                editRecommendationFormMessageDiv.classList.add('alert-success');
+                editRecommendationFormMessageDiv.textContent = data.message || 'Recommendation updated successfully!';
+                editRecommendationFormMessageDiv.style.display = 'block';
+                fetchOfficerRecommendations(); // Refresh recommendations list
+                // Optionally close modal after success
+                setTimeout(() => {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editRecommendationModal'));
+                    modal.hide();
+                }, 1500);
+            } else {
+                editRecommendationFormMessageDiv.classList.add('alert-danger');
+                editRecommendationFormMessageDiv.textContent = data.message || 'Failed to update recommendation.';
+                editRecommendationFormMessageDiv.style.display = 'block';
+                showBootstrapAlert('danger', data.message || 'Failed to update recommendation.'); // Show general alert
+            }
+        } catch (error) {
+            console.error('Error updating recommendation:', error);
+            editRecommendationFormMessageDiv.classList.add('alert-danger');
+            editRecommendationFormMessageDiv.textContent = 'An unexpected error occurred while updating the recommendation.';
+            editRecommendationFormMessageDiv.style.display = 'block';
+            showBootstrapAlert('danger', 'An unexpected error occurred while updating the recommendation.'); // Show general alert
         }
     });
 });
