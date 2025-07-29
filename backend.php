@@ -109,9 +109,9 @@ if ($action === 'login') {
         $_SESSION['full_name'] = $user['full_name']; // Store full name in session
 
         $redirect_url = match ($user['role']) {
-            'beekeeper' => 'beekeeper.php',
-            'officer' => 'officer.php',
-            'admin' => 'admin.php',
+            'beekeeper' => 'beekeeper_dashboard.php',
+            'officer' => 'officer_dashboard.php',
+            'admin' => 'admin_dashboard.php',
             default => 'login.php'
         };
 
@@ -141,7 +141,7 @@ if (!in_array($action, ['register', 'login', 'logout'])) {
 }
 
 // Beekeeper-specific actions
-if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'simulate', 'get_alerts', 'send_report', 'get_reports', 'delete_report', 'get_recommendations', 'delete_recommendation', 'get_beehives_for_selection', 'register_sensor', 'get_registered_sensors'])) {
+if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'simulate', 'get_alerts', 'send_report', 'get_reports', 'delete_report', 'get_recommendations', 'delete_recommendation', 'get_beehives_for_selection', 'register_sensor', 'get_registered_sensors', 'add_beehive', 'update_beehive', 'delete_beehive'])) {
     if ($currentUserRole !== 'beekeeper') {
         http_response_code(403); // Forbidden
         sendJsonResponse(false, "Access Denied. You must be a beekeeper to perform this action.", "FORBIDDEN_ROLE");
@@ -166,6 +166,76 @@ if (in_array($action, ['get_all_users', 'approve_user', 'delete_user'])) {
 
 
 // ---------------- BEEKEEPER DASHBOARD ACTIONS ----------------
+
+// NEW: Add a new beehive
+if ($action === 'add_beehive' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $hiveName = trim($data['hive_name'] ?? '');
+    $location = trim($data['location'] ?? '');
+
+    if (!$hiveName || !$location) {
+        sendJsonResponse(false, "Hive name and location are required.", "MISSING_FIELDS");
+    }
+
+    try {
+        $stmt = $pdo->prepare("INSERT INTO beehives (user_id, hive_name, location) VALUES (?, ?, ?)");
+        $stmt->execute([$currentUserId, $hiveName, $location]);
+        sendJsonResponse(true, "Beehive added successfully.");
+    } catch (PDOException $e) {
+        error_log("Add beehive error: " . $e->getMessage());
+        sendJsonResponse(false, "Failed to add beehive: " . $e->getMessage(), "DB_ERROR");
+    }
+}
+
+// NEW: Update an existing beehive
+if ($action === 'update_beehive' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $hiveId = $data['hive_id'] ?? null;
+    $hiveName = trim($data['hive_name'] ?? '');
+    $location = trim($data['location'] ?? '');
+
+    if (!$hiveId || !$hiveName || !$location) {
+        sendJsonResponse(false, "Hive ID, name, and location are required.", "MISSING_FIELDS");
+    }
+
+    try {
+        // Ensure the beehive belongs to the current user before updating
+        $stmt = $pdo->prepare("UPDATE beehives SET hive_name = ?, location = ? WHERE id = ? AND user_id = ?");
+        $stmt->execute([$hiveName, $location, $hiveId, $currentUserId]);
+
+        if ($stmt->rowCount() > 0) {
+            sendJsonResponse(true, "Beehive updated successfully.");
+        } else {
+            sendJsonResponse(false, "Beehive not found or you don't have permission to update it.", "NOT_FOUND_OR_UNAUTHORIZED");
+        }
+    } catch (PDOException $e) {
+        error_log("Update beehive error: " . $e->getMessage());
+        sendJsonResponse(false, "Failed to update beehive: " . $e->getMessage(), "DB_ERROR");
+    }
+}
+
+// NEW: Delete a beehive
+if ($action === 'delete_beehive' && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
+    $hiveId = $_GET['id'] ?? null; // Get ID from query string for DELETE requests
+
+    if (!$hiveId) {
+        sendJsonResponse(false, "Hive ID is required.", "MISSING_ID");
+    }
+
+    try {
+        // Ensure the beehive belongs to the current user before deleting
+        $stmt = $pdo->prepare("DELETE FROM beehives WHERE id = ? AND user_id = ?");
+        $stmt->execute([$hiveId, $currentUserId]);
+
+        if ($stmt->rowCount() > 0) {
+            sendJsonResponse(true, "Beehive deleted successfully.");
+        } else {
+            sendJsonResponse(false, "Beehive not found or you don't have permission to delete it.", "NOT_FOUND_OR_UNAUTHORIZED");
+        }
+    } catch (PDOException $e) {
+        error_log("Delete beehive error: " . $e->getMessage());
+        sendJsonResponse(false, "Failed to delete beehive: " . $e->getMessage(), "DB_ERROR");
+    }
+}
+
 
 // Simulate sensor data (now includes weight)
 if ($action === 'simulate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -207,7 +277,7 @@ if ($action === 'simulate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $alertStmt->execute([$simulatedHiveId, $alertMessage, $alertLevel]);
 
             // Attempt to send email alert (assuming $user['email'] is available from session)
-            // Note: sendAlert function is in beekeeper.php, so this would need to be moved or re-implemented here
+            // Note: sendAlert function is in beekeeper_dashboard.php, so this would need to be moved or re-implemented here
             // For now, we'll just log it.
             error_log("Critical alert generated for Hive $simulatedHiveId: $alertMessage");
             sendJsonResponse(true, "Critical alert logged for Hive $simulatedHiveId. Email functionality needs server setup.", "", ["status" => "critical"]);
@@ -625,6 +695,7 @@ if ($action === 'delete_recommendation_officer' && $_SERVER['REQUEST_METHOD'] ==
         sendJsonResponse(false, "Failed to delete recommendation: " . $e->getMessage(), "DB_ERROR");
     }
 }
+
 
 // ---------------- ADMIN DASHBOARD ACTIONS ----------------
 

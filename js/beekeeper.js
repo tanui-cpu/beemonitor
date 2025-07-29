@@ -1,7 +1,3 @@
-// Ensure Chart.js is loaded before this script if it's used here
-// const ctx = document.getElementById('liveChart').getContext('2d'); // This line needs Chart.js
-// liveChart initialization and update logic
-
 // Initial Chart.js setup
 const ctx = document.getElementById('liveChart').getContext('2d');
 const liveChart = new Chart(ctx, {
@@ -132,12 +128,37 @@ async function fetchBeehivesOverview() {
                         <div class="last-updated">
                             <small>Last reading: ${hive.last_reading_at ? new Date(hive.last_reading_at).toLocaleString() : 'Never'}</small>
                         </div>
+                        <div class="hive-actions w-100 text-end mt-2">
+                            <button class="btn btn-sm btn-info-custom edit-beehive-btn me-1"
+                                data-id="${hive.hive_id}"
+                                data-name="${htmlspecialchars(hive.hive_name)}"
+                                data-location="${htmlspecialchars(hive.location)}">Edit</button>
+                            <button class="btn btn-sm btn-danger delete-beehive-btn" data-id="${hive.hive_id}">Delete</button>
+                        </div>
                     </div>
                 `;
                 beehivesOverviewDiv.appendChild(hiveCard);
             });
+
+            // Add event listeners for new buttons
+            document.querySelectorAll('.edit-beehive-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const hiveId = event.target.dataset.id;
+                    const hiveName = event.target.dataset.name;
+                    const hiveLocation = event.target.dataset.location;
+                    showEditBeehiveModal(hiveId, hiveName, hiveLocation);
+                });
+            });
+
+            document.querySelectorAll('.delete-beehive-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const hiveId = event.target.dataset.id;
+                    showDeleteConfirmModal('beehive', hiveId);
+                });
+            });
+
         } else {
-            beehivesOverviewDiv.innerHTML = '<p class="text-center text-muted">No beehives registered yet. Please add a beehive to get started!</p>';
+            beehivesOverviewDiv.innerHTML = '<p class="text-center text-muted">No beehives registered yet. Click "Add New Beehive" to get started!</p>';
         }
     } catch (error) {
         console.error('Error fetching beehives overview:', error);
@@ -447,9 +468,70 @@ async function fetchRegisteredSensors() {
     }
 }
 
+// NEW: Function to add a beehive
+async function addBeehive(hiveName, location) {
+    try {
+        const response = await fetch('backend.php?action=add_beehive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hive_name: hiveName, location: location })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showBootstrapAlert('success', data.message || 'Beehive added successfully.');
+            fetchBeehivesOverview(); // Refresh the list
+        } else {
+            showBootstrapAlert('danger', data.message || 'Failed to add beehive.');
+        }
+    } catch (error) {
+        console.error('Error adding beehive:', error);
+        showBootstrapAlert('danger', 'An error occurred while adding the beehive.');
+    }
+}
+
+// NEW: Function to update a beehive
+async function updateBeehive(hiveId, hiveName, location) {
+    try {
+        const response = await fetch('backend.php?action=update_beehive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hive_id: hiveId, hive_name: hiveName, location: location })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showBootstrapAlert('success', data.message || 'Beehive updated successfully.');
+            fetchBeehivesOverview(); // Refresh the list
+        } else {
+            showBootstrapAlert('danger', data.message || 'Failed to update beehive.');
+        }
+    } catch (error) {
+        console.error('Error updating beehive:', error);
+        showBootstrapAlert('danger', 'An error occurred while updating the beehive.');
+    }
+}
+
+// NEW: Function to delete a beehive
+async function deleteBeehive(hiveId) {
+    try {
+        const response = await fetch(`backend.php?action=delete_beehive&id=${hiveId}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        if (data.success) {
+            showBootstrapAlert('success', data.message || 'Beehive deleted successfully.');
+            fetchBeehivesOverview(); // Refresh the list
+        } else {
+            showBootstrapAlert('danger', data.message || 'Failed to delete beehive.');
+        }
+    } catch (error) {
+        console.error('Error deleting beehive:', error);
+        showBootstrapAlert('danger', 'An error occurred while deleting the beehive.');
+    }
+}
+
 
 // Generic Delete Confirmation Modal Handler
-let deleteActionType = ''; // 'report' or 'recommendation'
+let deleteActionType = ''; // 'report', 'recommendation', 'beehive'
 let deleteItemId = null;
 
 function showDeleteConfirmModal(type, itemId) {
@@ -467,8 +549,21 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', async () =
         await deleteReport(deleteItemId);
     } else if (deleteActionType === 'recommendation') {
         await deleteRecommendation(deleteItemId);
+    } else if (deleteActionType === 'beehive') { // Handle beehive deletion
+        await deleteBeehive(deleteItemId);
     }
+    deleteItemId = null; // Reset for next use
 });
+
+// NEW: Function to show Edit Beehive Modal and populate fields
+function showEditBeehiveModal(hiveId, hiveName, hiveLocation) {
+    document.getElementById('editHiveId').value = hiveId;
+    document.getElementById('editHiveName').value = hiveName;
+    document.getElementById('editHiveLocation').value = hiveLocation;
+    document.getElementById('editBeehiveFormMessage').style.display = 'none'; // Hide any previous message
+    const editBeehiveModal = new bootstrap.Modal(document.getElementById('editBeehiveModal'));
+    editBeehiveModal.show();
+}
 
 
 // Event listeners and initial data loads
@@ -535,12 +630,14 @@ document.addEventListener('DOMContentLoaded', async function() {
                 reportFormMessageDiv.classList.add('alert-danger');
                 reportFormMessageDiv.textContent = data.message || 'Failed to send report.';
                 reportFormMessageDiv.style.display = 'block';
+                showBootstrapAlert('danger', data.message || 'Failed to send report.'); // Show general alert
             }
         } catch (error) {
             console.error('Error sending report:', error);
             reportFormMessageDiv.classList.add('alert-danger');
             reportFormMessageDiv.textContent = 'An unexpected error occurred while sending the report.';
             reportFormMessageDiv.style.display = 'block';
+            showBootstrapAlert('danger', 'An unexpected error occurred while sending the report.'); // Show general alert
         }
     });
 
@@ -585,12 +682,116 @@ document.addEventListener('DOMContentLoaded', async function() {
                 registerSensorFormMessageDiv.classList.add('alert-danger');
                 registerSensorFormMessageDiv.textContent = data.message || 'Failed to register sensor.';
                 registerSensorFormMessageDiv.style.display = 'block';
+                showBootstrapAlert('danger', data.message || 'Failed to register sensor.'); // Show general alert
             }
         } catch (error) {
             console.error('Error registering sensor:', error);
             registerSensorFormMessageDiv.classList.add('alert-danger');
             registerSensorFormMessageDiv.textContent = 'An unexpected error occurred while registering the sensor.';
             registerSensorFormMessageDiv.style.display = 'block';
+            showBootstrapAlert('danger', 'An unexpected error occurred while registering the sensor.'); // Show general alert
+        }
+    });
+
+    // NEW: Handle Add Beehive Form submission
+    document.getElementById('addBeehiveForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const hiveName = document.getElementById('newHiveName').value;
+        const location = document.getElementById('newHiveLocation').value;
+        const addBeehiveFormMessageDiv = document.getElementById('addBeehiveFormMessage');
+
+        addBeehiveFormMessageDiv.style.display = 'none';
+        addBeehiveFormMessageDiv.className = 'alert mt-3'; // Reset classes
+
+        if (!hiveName || !location) {
+            addBeehiveFormMessageDiv.classList.add('alert-danger');
+            addBeehiveFormMessageDiv.textContent = 'Please fill all beehive fields.';
+            addBeehiveFormMessageDiv.style.display = 'block';
+            return;
+        }
+
+        try {
+            const response = await fetch('backend.php?action=add_beehive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hive_name: hiveName, location: location })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                addBeehiveFormMessageDiv.classList.add('alert-success');
+                addBeehiveFormMessageDiv.textContent = data.message || 'Beehive added successfully!';
+                addBeehiveFormMessageDiv.style.display = 'block';
+                document.getElementById('addBeehiveForm').reset(); // Clear form
+                fetchBeehivesOverview(); // Refresh beehives list
+                // Optionally close modal after success
+                setTimeout(() => {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('addBeehiveModal'));
+                    modal.hide();
+                }, 1500);
+            } else {
+                addBeehiveFormMessageDiv.classList.add('alert-danger');
+                addBeehiveFormMessageDiv.textContent = data.message || 'Failed to add beehive.';
+                addBeehiveFormMessageDiv.style.display = 'block';
+                showBootstrapAlert('danger', data.message || 'Failed to add beehive.'); // Show general alert
+            }
+        } catch (error) {
+            console.error('Error adding beehive:', error);
+            addBeehiveFormMessageDiv.classList.add('alert-danger');
+            addBeehiveFormMessageDiv.textContent = 'An unexpected error occurred while adding the beehive.';
+            addBeehiveFormMessageDiv.style.display = 'block';
+            showBootstrapAlert('danger', 'An unexpected error occurred while adding the beehive.'); // Show general alert
+        }
+    });
+
+    // NEW: Handle Edit Beehive Form submission
+    document.getElementById('editBeehiveForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const hiveId = document.getElementById('editHiveId').value;
+        const hiveName = document.getElementById('editHiveName').value;
+        const location = document.getElementById('editHiveLocation').value;
+        const editBeehiveFormMessageDiv = document.getElementById('editBeehiveFormMessage');
+
+        editBeehiveFormMessageDiv.style.display = 'none';
+        editBeehiveFormMessageDiv.className = 'alert mt-3'; // Reset classes
+
+        if (!hiveId || !hiveName || !location) {
+            editBeehiveFormMessageDiv.classList.add('alert-danger');
+            editBeehiveFormMessageDiv.textContent = 'All fields are required for editing.';
+            editBeehiveFormMessageDiv.style.display = 'block';
+            return;
+        }
+
+        try {
+            const response = await fetch('backend.php?action=update_beehive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hive_id: hiveId, hive_name: hiveName, location: location })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                editBeehiveFormMessageDiv.classList.add('alert-success');
+                editBeehiveFormMessageDiv.textContent = data.message || 'Beehive updated successfully!';
+                editBeehiveFormMessageDiv.style.display = 'block';
+                fetchBeehivesOverview(); // Refresh beehives list
+                // Optionally close modal after success
+                setTimeout(() => {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editBeehiveModal'));
+                    modal.hide();
+                }, 1500);
+            } else {
+                editBeehiveFormMessageDiv.classList.add('alert-danger');
+                editBeehiveFormMessageDiv.textContent = data.message || 'Failed to update beehive.';
+                editBeehiveFormMessageDiv.style.display = 'block';
+                showBootstrapAlert('danger', data.message || 'Failed to update beehive.'); // Show general alert
+            }
+        } catch (error) {
+            console.error('Error updating beehive:', error);
+            editBeehiveFormMessageDiv.classList.add('alert-danger');
+            editBeehiveFormMessageDiv.textContent = 'An unexpected error occurred while updating the beehive.';
+            editBeehiveFormMessageDiv.style.display = 'block';
+            showBootstrapAlert('danger', 'An unexpected error occurred while updating the beehive.'); // Show general alert
         }
     });
 });

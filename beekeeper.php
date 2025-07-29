@@ -157,6 +157,13 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
 <div class="container mt-4">
     <h3 class="mb-4">🏠 Your Beehives Overview</h3>
 
+    <!-- Add Beehive Button -->
+    <div class="mb-3 text-end">
+        <button type="button" class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#addBeehiveModal">
+            ➕ Add New Beehive
+        </button>
+    </div>
+
     <!-- Beehive Cards Section -->
     <div id="beehivesOverview" class="row">
         <p class="text-center text-muted">Loading beehives...</p>
@@ -193,7 +200,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="card p-3 mb-4">
         <h5>📈 Temperature & Humidity Trends Over Time</h5>
         <div class="chart-container-wrapper">
-            <canvas id="liveChart" height="100"></canvas>
+            <canvas id="liveChart" height="300"></canvas>
         </div>
     </div>
 
@@ -365,7 +372,66 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Generic Delete Confirmation Modal -->
+<!-- NEW: Add Beehive Modal -->
+<div class="modal fade" id="addBeehiveModal" tabindex="-1" aria-labelledby="addBeehiveModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addBeehiveModalLabel">Add New Beehive</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="addBeehiveForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="newHiveName" class="form-label">Beehive Name:</label>
+                        <input type="text" class="form-control" id="newHiveName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newHiveLocation" class="form-label">Location:</label>
+                        <input type="text" class="form-control" id="newHiveLocation" required>
+                    </div>
+                    <div id="addBeehiveFormMessage" class="alert mt-3" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom">Add Beehive</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- NEW: Edit Beehive Modal -->
+<div class="modal fade" id="editBeehiveModal" tabindex="-1" aria-labelledby="editBeehiveModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editBeehiveModalLabel">Edit Beehive</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editBeehiveForm">
+                <input type="hidden" id="editHiveId">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="editHiveName" class="form-label">Beehive Name:</label>
+                        <input type="text" class="form-control" id="editHiveName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editHiveLocation" class="form-label">Location:</label>
+                        <input type="text" class="form-control" id="editHiveLocation" required>
+                    </div>
+                    <div id="editBeehiveFormMessage" class="alert mt-3" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Generic Delete Confirmation Modal (used for reports, recommendations, and now beehives) -->
 <div class="modal fade" id="genericDeleteConfirmModal" tabindex="-1" aria-labelledby="genericDeleteConfirmModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
