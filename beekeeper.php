@@ -126,6 +126,12 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/utils.js"></script> <!-- Common utilities -->
+    <script>
+        // --- NO THINGSPEAK CONFIGURATION ---
+        // ThingSpeak integration has been removed as per request.
+        // The chart will now always fetch data from your local backend.
+        // ------------------------------------
+    </script>
 </head>
 <body>
 
@@ -288,6 +294,38 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
+<!-- NEW: Edit Report Modal -->
+<div class="modal fade" id="editReportModal" tabindex="-1" aria-labelledby="editReportModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editReportModalLabel">Edit Report</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editReportForm">
+                <input type="hidden" id="editReportId">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="editReportOfficerSelect" class="form-label">Send to Officer:</label>
+                        <select class="form-select" id="editReportOfficerSelect" required>
+                            <option value="">Loading officers...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editReportMessage" class="form-label">Report Message:</label>
+                        <textarea class="form-control" id="editReportMessage" rows="5" required></textarea>
+                    </div>
+                    <div id="editReportFormMessage" class="alert mt-3" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- View Report Details Modal -->
 <div class="modal fade" id="viewReportModal" tabindex="-1" aria-labelledby="viewReportModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -431,7 +469,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- NEW: Edit Sensor Modal -->
+<!-- Edit Sensor Modal -->
 <div class="modal fade" id="editSensorModal" tabindex="-1" aria-labelledby="editSensorModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -491,6 +529,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 </div>
+
 
 <script src="js/beekeeper.js"></script> <!-- Dashboard specific JS -->
 </body>

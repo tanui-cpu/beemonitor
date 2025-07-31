@@ -68,33 +68,51 @@ const liveChart = new Chart(ctx, {
 
 // Function to fetch and update sensor data for the chart
 async function fetchSensorData() {
-    try {
-        // Fetch more data points to enable horizontal scrolling
-        const response = await fetch('backend.php?action=get_live_sensor_data');
-        const data = await response.json();
+    // ThingSpeak integration removed. Always fetch from local backend.
+    const sensorData = await fetchLocalSensorData();
 
-        if (data.success && data.sensor_data) {
-            const sortedData = data.sensor_data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    // Process and update chart
+    if (sensorData && sensorData.length > 0) {
+        const sortedData = sensorData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-            const labels = sortedData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-            const temperatures = sortedData.map(d => d.temperature);
-            const humidities = sortedData.map(d => d.humidity);
-            const weights = sortedData.map(d => d.weight); // Get weight data
+        const labels = sortedData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        const temperatures = sortedData.map(d => d.temperature);
+        const humidities = sortedData.map(d => d.humidity);
+        const weights = sortedData.map(d => d.weight);
 
-            // Update Chart.js
-            liveChart.data.labels = labels;
-            liveChart.data.datasets[0].data = temperatures;
-            liveChart.data.datasets[1].data = humidities;
-            liveChart.data.datasets[2].data = weights; // Update weight dataset
-            liveChart.update();
-
-        } else {
-            console.error('Failed to fetch sensor data:', data.message);
-        }
-    } catch (error) {
-        console.error('Error fetching sensor data:', error);
+        liveChart.data.labels = labels;
+        liveChart.data.datasets[0].data = temperatures;
+        liveChart.data.datasets[1].data = humidities;
+        liveChart.data.datasets[2].data = weights;
+        liveChart.update();
+    } else {
+        console.warn('No sensor data available to display on chart.');
+        liveChart.data.labels = [];
+        liveChart.data.datasets[0].data = [];
+        liveChart.data.datasets[1].data = [];
+        liveChart.data.datasets[2].data = [];
+        liveChart.update();
     }
 }
+
+// Helper function to fetch data from your local backend
+async function fetchLocalSensorData() {
+    try {
+        const response = await fetch('backend.php?action=get_live_sensor_data');
+        const data = await response.json();
+        if (data.success && data.sensor_data) {
+            console.log('Fetched data from local backend:', data.sensor_data);
+            return data.sensor_data;
+        } else {
+            console.error('Failed to fetch local sensor data:', data.message);
+            return [];
+        }
+    } catch (error) {
+        console.error('Error fetching local sensor data:', error);
+        return [];
+    }
+}
+
 
 // Function to fetch and display beehives overview (now includes weight)
 async function fetchBeehivesOverview() {
@@ -203,7 +221,10 @@ async function fetchOfficers() {
         const response = await fetch('backend.php?action=get_officers');
         const data = await response.json();
         const officerSelect = document.getElementById('officerSelect');
+        const editReportOfficerSelect = document.getElementById('editReportOfficerSelect'); // For edit report modal
+        
         officerSelect.innerHTML = '<option value="">Select an officer</option>'; // Reset options
+        editReportOfficerSelect.innerHTML = '<option value="">Select an officer</option>'; // Reset options for edit modal
 
         if (data.success && data.officers && data.officers.length > 0) {
             data.officers.forEach(officer => {
@@ -211,13 +232,18 @@ async function fetchOfficers() {
                 option.value = officer.id;
                 option.textContent = `${officer.full_name} (${officer.email})`;
                 officerSelect.appendChild(option);
+
+                const editOption = option.cloneNode(true); // Clone for edit modal
+                editReportOfficerSelect.appendChild(editOption);
             });
         } else {
             officerSelect.innerHTML = '<option value="">No officers found</option>';
+            editReportOfficerSelect.innerHTML = '<option value="">No officers found</option>';
         }
     } catch (error) {
         console.error('Error fetching officers:', error);
         document.getElementById('officerSelect').innerHTML = '<option value="">Error loading officers</option>';
+        document.getElementById('editReportOfficerSelect').innerHTML = '<option value="">Error loading officers</option>';
     }
 }
 
@@ -257,6 +283,10 @@ async function fetchSentReports() {
                             data-officer="${htmlspecialchars(report.officer_name)} (${htmlspecialchars(report.officer_email)})"
                             data-date="${new Date(report.created_at).toLocaleString()}"
                             data-message="${htmlspecialchars(report.message)}">View</button>
+                        <button class="btn btn-sm btn-primary-custom edit-report-btn me-1"
+                            data-id="${report.id}"
+                            data-officer-id="${report.officer_id}"
+                            data-message="${htmlspecialchars(report.message)}">Edit</button>
                         <button class="btn btn-sm btn-danger delete-report-btn" data-id="${report.id}">Delete</button>
                     </td>
                 `;
@@ -285,6 +315,16 @@ async function fetchSentReports() {
 
                     const viewModal = new bootstrap.Modal(document.getElementById('viewReportModal'));
                     viewModal.show();
+                });
+            });
+
+            // NEW: Add event listeners for edit buttons
+            document.querySelectorAll('.edit-report-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const reportId = event.target.dataset.id;
+                    const officerId = event.target.dataset.officerId;
+                    const message = event.target.dataset.message;
+                    showEditReportModal(reportId, officerId, message);
                 });
             });
 
@@ -618,6 +658,31 @@ async function deleteSensor(sensorId) {
     }
 }
 
+// NEW: Function to update a report
+async function updateReport(reportId, officerId, message) {
+    try {
+        const response = await fetch('backend.php?action=update_report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                report_id: reportId,
+                officer_id: officerId,
+                message: message
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showBootstrapAlert('success', data.message || 'Report updated successfully.');
+            fetchSentReports(); // Refresh the list
+        } else {
+            showBootstrapAlert('danger', data.message || 'Failed to update report.');
+        }
+    } catch (error) {
+        console.error('Error updating report:', error);
+        showBootstrapAlert('danger', 'An error occurred while updating the report.');
+    }
+}
+
 
 // Generic Delete Confirmation Modal Handler
 let deleteActionType = ''; // 'report', 'recommendation', 'beehive', 'sensor'
@@ -656,7 +721,7 @@ function showEditBeehiveModal(hiveId, hiveName, hiveLocation) {
     editBeehiveModal.show();
 }
 
-// NEW: Function to show Edit Sensor Modal and populate fields
+// Function to show Edit Sensor Modal and populate fields
 async function showEditSensorModal(sensorId, hiveId, serialNumber, sensorType) {
     document.getElementById('editSensorId').value = sensorId;
     document.getElementById('editSensorSerialNumber').value = serialNumber;
@@ -673,22 +738,39 @@ async function showEditSensorModal(sensorId, hiveId, serialNumber, sensorType) {
     editSensorModal.show();
 }
 
+// NEW: Function to show Edit Report Modal and populate fields
+async function showEditReportModal(reportId, officerId, message) {
+    document.getElementById('editReportId').value = reportId;
+    document.getElementById('editReportMessage').value = message;
+
+    // Populate the officer dropdown for the edit report modal
+    await fetchOfficers(); // This will populate both officerSelect and editReportOfficerSelect
+
+    // Set the selected officer in the edit modal dropdown
+    document.getElementById('editReportOfficerSelect').value = officerId;
+
+    document.getElementById('editReportFormMessage').style.display = 'none'; // Hide any previous message
+    const editReportModal = new bootstrap.Modal(document.getElementById('editReportModal'));
+    editReportModal.show();
+}
+
 
 // Event listeners and initial data loads
 document.addEventListener('DOMContentLoaded', async function() {
     // Initial data fetches
     await fetchBeehivesOverview();
-    await fetchSensorData();
+    await fetchSensorData(); // This will now use local backend only
     await fetchAlerts();
     await fetchSentReports();
     await fetchReceivedRecommendations();
-    await fetchRegisteredSensors(); // NEW: Fetch registered sensors on load
+    await fetchRegisteredSensors(); // Fetch registered sensors on load
 
     // Auto-refresh sensor data, alerts, and beehives overview every 10 seconds
     setInterval(fetchBeehivesOverview, 10000);
-    setInterval(fetchSensorData, 10000);
+    setInterval(fetchSensorData, 10000); // This will now use local backend only
     setInterval(fetchAlerts, 10000);
-    setInterval(fetchRegisteredSensors, 10000); // NEW: Auto-refresh registered sensors
+    setInterval(fetchRegisteredSensors, 10000);
+    setInterval(fetchSentReports, 10000);
 
     // Populate officers dropdown when sendReportModal is shown
     const sendReportModal = document.getElementById('sendReportModal');
@@ -959,6 +1041,57 @@ document.addEventListener('DOMContentLoaded', async function() {
             editSensorFormMessageDiv.textContent = 'An unexpected error occurred while updating the sensor.';
             editSensorFormMessageDiv.style.display = 'block';
             showBootstrapAlert('danger', 'An unexpected error occurred while updating the sensor.'); // Show general alert
+        }
+    });
+
+    // NEW: Handle Edit Report Form submission
+    document.getElementById('editReportForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const reportId = document.getElementById('editReportId').value;
+        const officerId = document.getElementById('editReportOfficerSelect').value;
+        const message = document.getElementById('editReportMessage').value;
+        const editReportFormMessageDiv = document.getElementById('editReportFormMessage');
+
+        editReportFormMessageDiv.style.display = 'none';
+        editReportFormMessageDiv.className = 'alert mt-3'; // Reset classes
+
+        if (!reportId || !officerId || !message) {
+            editReportFormMessageDiv.classList.add('alert-danger');
+            editReportFormMessageDiv.textContent = 'Please select an officer and enter a message.';
+            editReportFormMessageDiv.style.display = 'block';
+            return;
+        }
+
+        try {
+            const response = await fetch('backend.php?action=update_report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ report_id: reportId, officer_id: officerId, message: message })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                editReportFormMessageDiv.classList.add('alert-success');
+                editReportFormMessageDiv.textContent = data.message || 'Report updated successfully!';
+                editReportFormMessageDiv.style.display = 'block';
+                fetchSentReports(); // Refresh sent reports list
+                // Optionally close modal after success
+                setTimeout(() => {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editReportModal'));
+                    modal.hide();
+                }, 1500);
+            } else {
+                editReportFormMessageDiv.classList.add('alert-danger');
+                editReportFormMessageDiv.textContent = data.message || 'Failed to update report.';
+                editReportFormMessageDiv.style.display = 'block';
+                showBootstrapAlert('danger', data.message || 'Failed to update report.'); // Show general alert
+            }
+        } catch (error) {
+            console.error('Error updating report:', error);
+            editReportFormMessageDiv.classList.add('alert-danger');
+            editReportFormMessageDiv.textContent = 'An unexpected error occurred while updating the report.';
+            editReportFormMessageDiv.style.display = 'block';
+            showBootstrapAlert('danger', 'An unexpected error occurred while updating the report.'); // Show general alert
         }
     });
 });

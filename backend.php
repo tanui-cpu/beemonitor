@@ -141,7 +141,7 @@ if (!in_array($action, ['register', 'login', 'logout'])) {
 }
 
 // Beekeeper-specific actions
-if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'simulate', 'get_alerts', 'send_report', 'get_reports', 'delete_report', 'get_recommendations', 'delete_recommendation', 'get_beehives_for_selection', 'register_sensor', 'get_registered_sensors', 'add_beehive', 'update_beehive', 'delete_beehive', 'update_sensor', 'delete_sensor'])) {
+if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'simulate', 'get_alerts', 'send_report', 'get_reports', 'delete_report', 'get_recommendations', 'delete_recommendation', 'get_beehives_for_selection', 'register_sensor', 'get_registered_sensors', 'add_beehive', 'update_beehive', 'delete_beehive', 'update_sensor', 'delete_sensor', 'update_report'])) { // Added 'update_report'
     if ($currentUserRole !== 'beekeeper') {
         http_response_code(403); // Forbidden
         sendJsonResponse(false, "Access Denied. You must be a beekeeper to perform this action.", "FORBIDDEN_ROLE");
@@ -149,7 +149,7 @@ if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'simulat
 }
 
 // Officer-specific actions
-if (in_array($action, ['get_reports_for_officer', 'add_recommendation', 'get_recommendations_by_officer', 'delete_report_officer', 'delete_recommendation_officer', 'update_recommendation'])) { // Added 'update_recommendation'
+if (in_array($action, ['get_reports_for_officer', 'add_recommendation', 'get_recommendations_by_officer', 'delete_report_officer', 'delete_recommendation_officer', 'update_recommendation'])) {
     if ($currentUserRole !== 'officer') {
         http_response_code(403); // Forbidden
         sendJsonResponse(false, "Access Denied. You must be an officer to perform this action.", "FORBIDDEN_ROLE");
@@ -406,6 +406,32 @@ if ($action === 'get_reports') {
     } catch (PDOException $e) {
         error_log("Get reports error: " . $e->getMessage());
         sendJsonResponse(false, "Failed to retrieve reports.", "DB_ERROR");
+    }
+}
+
+// NEW: Update an existing report (Beekeeper only)
+if ($action === 'update_report' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $reportId = $data['report_id'] ?? null;
+    $message = trim($data['message'] ?? '');
+    $officerId = $data['officer_id'] ?? null; // Allow changing officer if needed, or keep same
+
+    if (!$reportId || !$message || !$officerId) {
+        sendJsonResponse(false, "Report ID, message, and officer ID are required.", "MISSING_FIELDS");
+    }
+
+    try {
+        // Ensure the report belongs to the current beekeeper before updating
+        $stmt = $pdo->prepare("UPDATE reports SET message = ?, officer_id = ? WHERE id = ? AND beekeeper_id = ?");
+        $stmt->execute([$message, $officerId, $reportId, $currentUserId]);
+
+        if ($stmt->rowCount() > 0) {
+            sendJsonResponse(true, "Report updated successfully.");
+        } else {
+            sendJsonResponse(false, "Report not found or you don't have permission to update it.", "NOT_FOUND_OR_UNAUTHORIZED");
+        }
+    } catch (PDOException $e) {
+        error_log("Update report error: " . $e->getMessage());
+        sendJsonResponse(false, "Failed to update report: " . $e->getMessage(), "DB_ERROR");
     }
 }
 
@@ -701,7 +727,7 @@ if ($action === 'add_recommendation' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// NEW: Update an existing recommendation (Officer only)
+// Update an existing recommendation (Officer only)
 if ($action === 'update_recommendation' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $recommendationId = $data['recommendation_id'] ?? null;
     $message = trim($data['message'] ?? '');
