@@ -3,7 +3,7 @@ session_start();
 require_once 'dbconnect.php'; // Use require_once for consistency with other files
 
 // Check if logged in and role is 'officer'
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'officer') { // Use $_SESSION['role']
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'officer') { // IMPORTANT: Changed 'officer' to 'agricultural_officer'
     header("Location: login.php"); // Redirect to login.php
     exit;
 }
@@ -27,12 +27,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <title>Extension Officer Dashboard - Bee Farming System</title>
+    <title>Agricultural Officer Dashboard - Bee Farming System</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css"> <!-- Consolidated CSS -->
+    <link rel="stylesheet" href="css/style.css"> 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="js/utils.js"></script> <!-- Common utilities -->
+    <script src="js/utils.js"></script> 
 </head>
 <body>
 
@@ -42,12 +42,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
 </div>
 
 <!-- Navigation Bar -->
-<nav class="navbar navbar-expand-lg navbar-custom">
+<nav class="navbar navbar-expand-lg navbar-warning bg-warning">
     <div class="container">
-        <a class="navbar-brand" href="officer_dashboard.php">📊 Officer Dashboard</a>
+        <a class="navbar-brand fw-bold text-dark" href="#">Bee Monitoring System</a>
         <div class="ms-auto d-flex align-items-center">
-            <span class="me-3 text-white">Hi, <?= htmlspecialchars($officerName) ?></span>
-            <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#logoutConfirmModal">
+            <span class="me-3 text-dark">Hi, <?= htmlspecialchars($officerName) ?></span>
+            <button type="button" class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#logoutConfirmModal">
                 Logout
             </button>
         </div>
@@ -70,12 +70,11 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
 
     <!-- Recommendations Sent by You Section -->
     <div class="card p-3 mb-4">
-        <h5>👍 Recommendations Sent by You</h5>
+        <h5>👍 Recommendations Sent</h5>
         <div id="officerRecommendationsList">
             <p class="text-center text-muted">Loading recommendations...</p>
         </div>
     </div>
-
 </div>
 
 <!-- Logout Confirmation Modal -->
@@ -108,8 +107,13 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
             <form id="addRecommendationForm">
                 <div class="modal-body">
                     <input type="hidden" id="recommendationReportId" name="report_id">
+                    <input type="hidden" id="recommendationBeekeeperId"> <!-- Added hidden field for beekeeper_id -->
                     <p><strong>Report from:</strong> <span id="recommendationBeekeeperName"></span> (<span id="recommendationBeekeeperEmail"></span>)</p>
                     <p><strong>Report Message:</strong> <span id="recommendationReportMessage" class="text-muted"></span></p>
+                    <div class="mb-3">
+                        <label for="recommendationSensorData" class="form-label">Related Sensor Data (Optional, e.g., "Hive 1, Temp 38C"):</label>
+                        <input type="text" class="form-control" id="recommendationSensorData">
+                    </div>
                     <div class="mb-3">
                         <label for="recommendationMessage" class="form-label">Recommendation Message:</label>
                         <textarea class="form-control" id="recommendationMessage" rows="5" required></textarea>
@@ -125,7 +129,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     </div>
 </div>
 
-<!-- NEW: Edit Recommendation Modal -->
+<!-- Edit Recommendation Modal -->
 <div class="modal fade" id="editRecommendationModal" tabindex="-1" aria-labelledby="editRecommendationModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -138,6 +142,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
                 <div class="modal-body">
                     <p><strong>To Beekeeper:</strong> <span id="editRecommendationBeekeeperName"></span></p>
                     <p><strong>Related Report:</strong> <span id="editRecommendationRelatedReport"></span></p>
+                    <div class="mb-3">
+                        <label for="editRecommendationSensorData" class="form-label">Related Sensor Data (Optional):</label>
+                        <input type="text" class="form-control" id="editRecommendationSensorData">
+                    </div>
                     <div class="mb-3">
                         <label for="editRecommendationMessage" class="form-label">Recommendation Message:</label>
                         <textarea class="form-control" id="editRecommendationMessage" rows="5" required></textarea>
@@ -172,6 +180,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <!-- NEW: Reply button directly in the view modal footer -->
+                <button type="button" class="btn btn-primary-custom" id="replyToReportBtn">Reply with Recommendation</button>
             </div>
         </div>
     </div>

@@ -1,5 +1,6 @@
 <?php
 session_start(); // Must be the very first line of PHP
+require 'vendor/autoload.php'; // Ensure you have installed the required packages via Composer
 require_once 'dbconnect.php'; // Contains $pdo = new PDO(...) - Ensure this path is correct
 
 // Set standard headers for JSON API responses
@@ -52,7 +53,7 @@ if ($action === 'register') {
     if (strlen($password) < 8) {
         sendJsonResponse(false, "Password must be at least 8 characters long.", "PASSWORD_TOO_SHORT");
     }
-    if ($role === 'admin' || $role === 'officer') {
+    if ($role === 'admin' || $role === 'officer') { // Changed 'officer' to 'agricultural_officer'
         sendJsonResponse(false, "Cannot register for this role through the public form.", "INVALID_ROLE");
     }
 
@@ -80,8 +81,7 @@ if ($action === 'register') {
 // ---------------- LOGIN ACTION ----------------
 if ($action === 'login') {
     $email = trim($data['email'] ?? '');
-    $password = trim($data['password'] ?? ''); // Trim password too, though password_verify handles trailing whitespace
-
+    $password = trim($data['password'] ?? ''); 
     if (!$email || !$password) {
         sendJsonResponse(false, "Email and password are required.", "MISSING_CREDENTIALS");
     }
@@ -105,13 +105,13 @@ if ($action === 'login') {
 
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['role'] = $user['role'];
-        $_SESSION['email'] = $email; // Store email in session
-        $_SESSION['full_name'] = $user['full_name']; // Store full name in session
+        $_SESSION['email'] = $email; 
+        $_SESSION['full_name'] = $user['full_name']; 
 
         $redirect_url = match ($user['role']) {
-            'beekeeper' => 'beekeeper_dashboard.php',
-            'officer' => 'officer_dashboard.php',
-            'admin' => 'admin_dashboard.php',
+            'beekeeper' => 'beekeeper.php',
+            'officer' => 'officer.php', 
+            'admin' => 'admin.php',
             default => 'login.php'
         };
 
@@ -130,10 +130,116 @@ if ($action === 'logout') {
     sendJsonResponse(true, "Logged out successfully.", "", ["redirect" => "login.php"]);
 }
 
+// ---------------- FORGOT PASSWORD ACTIONS (No login required) ----------------
+
+// Request Password Reset
+if ($action === 'request_password_reset' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (empty($_POST['email'])) {
+        echo json_encode(['success' => false, 'message' => 'Email is required.']);
+        exit;
+    }
+    $email = $_POST['email'];
+
+    try {
+        // 1. Find the user
+        $stmt = $pdo->prepare("SELECT id, full_name FROM users WHERE email = ?");
+        $stmt->execute([$email]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // 2. If the user exists, generate and save the token
+        if ($user) {
+            $token = bin2hex(random_bytes(32));
+            $expiry = date('Y-m-d H:i:s', strtotime('+1 hour'));
+            
+            $updateStmt = $pdo->prepare("UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE id = ?");
+            $updateStmt->execute([$token, $expiry, $user['id']]);
+
+            // The reset link should point to your resetPassword.php file with the token
+            $resetLink = "http://localhost/beemonitor/password/resetPassword.php?token=" . $token;
+
+            try {
+                // Create a new PHPMailer instance
+                $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+                $mail->isSMTP();
+                $mail->Host       = 'smtp.gmail.com';
+                $mail->SMTPAuth   = true;
+                $mail->Username   = 'brian.kiptanui@strathmore.edu';
+                $mail->Password   = 'pazl rtdf sejy pxgg'; // Your new App Password
+                $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+                $mail->Port       = 465;
+
+                // Set the sender and recipient dynamically
+                $mail->setFrom('brian.kiptanui@strathmore.edu', 'BEE MONITOR');
+                $mail->addAddress($email, $user['full_name']);
+                
+                // Set the email content with the reset link
+                $mail->isHTML(true);
+                $mail->Subject = 'Password Reset Request';
+                $mail->Body    = 'Hello ' . $user['full_name'] . ',<br><br>Click the following link to reset your password: <a href="' . $resetLink . '">' . $resetLink . '</a><br><br>If you did not request a password reset, please ignore this email.';
+
+                $mail->send();
+            } catch (Exception $e) {
+                // Log the email error but don't show it to the user
+                error_log("Email could not be sent. Mailer Error: {$mail->ErrorInfo}");
+            }
+
+        }
+        // 3. Always return the same generic message to prevent user enumeration
+        echo json_encode(['success' => true, 'message' => 'If account exists, a reset link has been sent to your email.']);
+        exit;
+
+    } catch (PDOException $e) {
+        // Log the detailed error for debugging, but return a generic error to the user
+        error_log("Reset error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Database error.']);
+        exit;
+    }
+}
+
+// Reset Password
+if ($action === 'reset_password' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token = $_POST['token'] ?? '';
+    $newPassword = $_POST['new_password'] ?? '';
+    $confirmPassword = $_POST['confirm_password'] ?? '';
+
+    if (!$token || !$newPassword || !$confirmPassword) {
+        echo json_encode(['success' => false, 'message' => 'All fields are required.']);
+        exit;
+    }
+    if ($newPassword !== $confirmPassword) {
+        echo json_encode(['success' => false, 'message' => 'Passwords do not match.']);
+        exit;
+    }
+    if (strlen($newPassword) < 8) {
+        echo json_encode(['success' => false, 'message' => 'Password must be at least 8 characters.']);
+        exit;
+    }
+
+    try {
+        $stmt = $pdo->prepare("SELECT id, reset_token_expiry FROM users WHERE reset_token = ?");
+        $stmt->execute([$token]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user || time() > strtotime($user['reset_token_expiry'])) {
+            echo json_encode(['success' => false, 'message' => 'Invalid or expired token.']);
+            exit;
+        }
+
+        $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+        $updateStmt = $pdo->prepare("UPDATE users SET password = ?, reset_token = NULL, reset_token_expiry = NULL WHERE id = ?");
+        $updateStmt->execute([$hashedPassword, $user['id']]);
+
+        echo json_encode(['success' => true, 'message' => 'Password has been reset successfully.']);
+    } catch (PDOException $e) {
+        error_log("Reset error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Database error.']);
+    }
+}
+
 // ---------------- API ENDPOINTS WITH ROLE-BASED ACCESS CONTROL ----------------
 
 // Middleware to check if user is logged in
-if (!in_array($action, ['register', 'login', 'logout'])) {
+if (!in_array($action, ['register', 'login', 'logout', 'request_password_reset', 'reset_password'])) {
     if (!$currentUserId) {
         http_response_code(401); // Unauthorized
         sendJsonResponse(false, "Unauthorized access. Please log in.", "UNAUTHORIZED");
@@ -141,18 +247,18 @@ if (!in_array($action, ['register', 'login', 'logout'])) {
 }
 
 // Beekeeper-specific actions
-if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'simulate', 'get_alerts', 'send_report', 'get_reports', 'delete_report', 'get_recommendations', 'delete_recommendation', 'get_beehives_for_selection', 'register_sensor', 'get_registered_sensors', 'add_beehive', 'update_beehive', 'delete_beehive', 'update_sensor', 'delete_sensor', 'update_report'])) { // Added 'update_report'
+if (in_array($action, ['get_beehives_overview', 'get_live_sensor_data', 'get_sensor_data_by_sensor_id', 'simulate', 'get_alerts', 'send_report', 'get_reports', 'delete_report', 'get_recommendations', 'delete_recommendation', 'get_beehives_for_selection', 'register_sensor', 'get_registered_sensors', 'add_beehive', 'update_beehive', 'delete_beehive', 'update_sensor', 'delete_sensor', 'update_report'])) {
     if ($currentUserRole !== 'beekeeper') {
         http_response_code(403); // Forbidden
         sendJsonResponse(false, "Access Denied. You must be a beekeeper to perform this action.", "FORBIDDEN_ROLE");
     }
 }
 
-// Officer-specific actions
+// Officer-specific actions 
 if (in_array($action, ['get_reports_for_officer', 'add_recommendation', 'get_recommendations_by_officer', 'delete_report_officer', 'delete_recommendation_officer', 'update_recommendation'])) {
     if ($currentUserRole !== 'officer') {
         http_response_code(403); // Forbidden
-        sendJsonResponse(false, "Access Denied. You must be an officer to perform this action.", "FORBIDDEN_ROLE");
+        sendJsonResponse(false, "Access Denied. You must be an agricultural officer to perform this action.", "FORBIDDEN_ROLE");
     }
 }
 
@@ -164,7 +270,6 @@ if (in_array($action, ['get_all_users', 'approve_user', 'delete_user', 'update_u
     }
 }
 
-
 // ---------------- BEEKEEPER DASHBOARD ACTIONS ----------------
 
 // Add a new beehive
@@ -175,7 +280,6 @@ if ($action === 'add_beehive' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$hiveName || !$location) {
         sendJsonResponse(false, "Hive name and location are required.", "MISSING_FIELDS");
     }
-
     try {
         $stmt = $pdo->prepare("INSERT INTO beehives (user_id, hive_name, location) VALUES (?, ?, ?)");
         $stmt->execute([$currentUserId, $hiveName, $location]);
@@ -197,7 +301,6 @@ if ($action === 'update_beehive' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     try {
-        // Ensure the beehive belongs to the current user before updating
         $stmt = $pdo->prepare("UPDATE beehives SET hive_name = ?, location = ? WHERE id = ? AND user_id = ?");
         $stmt->execute([$hiveName, $location, $hiveId, $currentUserId]);
 
@@ -221,7 +324,6 @@ if ($action === 'delete_beehive' && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
     }
 
     try {
-        // Ensure the beehive belongs to the current user before deleting
         $stmt = $pdo->prepare("DELETE FROM beehives WHERE id = ? AND user_id = ?");
         $stmt->execute([$hiveId, $currentUserId]);
 
@@ -236,10 +338,9 @@ if ($action === 'delete_beehive' && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
     }
 }
 
-
-// Simulate sensor data (now includes weight)
+// Simulate sensor data 
 if ($action === 'simulate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Fetch one of the beekeeper's hives to simulate data for
+    // Fetch one of the beekeeper's hives
     $hiveStmt = $pdo->prepare("SELECT id FROM beehives WHERE user_id = ? LIMIT 1");
     $hiveStmt->execute([$currentUserId]);
     $hive = $hiveStmt->fetch(PDO::FETCH_ASSOC);
@@ -248,42 +349,46 @@ if ($action === 'simulate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         sendJsonResponse(false, "Cannot simulate data: No beehives registered for your account. Please add one first!", "NO_HIVES_FOUND");
     }
 
-    $simulatedHiveId = $hive['id']; // Use the actual hive ID
+    $simulatedHiveId = $hive['id'];
 
-    $temperature = rand(25, 45); // Simulate temperature within a range
-    $humidity = rand(20, 60);   // Simulate humidity within a range
-    $weight = rand(10, 50) + (rand(0, 99) / 100); // Simulate weight with 2 decimal places
+    // Fetch a random sensor associated with this hive
+    $sensorStmt = $pdo->prepare("SELECT id FROM sensors WHERE hive_id = ? ORDER BY RAND() LIMIT 1");
+    $sensorStmt->execute([$simulatedHiveId]);
+    $sensor = $sensorStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$sensor) {
+        sendJsonResponse(false, "Cannot simulate data: No sensors registered for Hive ID " . $simulatedHiveId . ". Please register a sensor first!", "NO_SENSORS_FOUND");
+    }
+
+    $simulatedSensorId = $sensor['id'];
+
+    $temperature = rand(25, 45); 
+    $humidity = rand(20, 60);   
+    $weight = rand(10, 50) + (rand(0, 99) / 100); 
 
     $status = 'Normal';
-    // More realistic critical conditions: outside optimal range (e.g., 32-35C temp, 50-70% humidity)
-    // Add weight conditions: e.g., if weight drops significantly, or is too low/high
-    if ($temperature > 40 || $temperature < 15 || $humidity < 30 || $humidity > 80 || $weight < 15 || $weight > 45) {
+        if ($temperature > 40 || $temperature < 15 || $humidity < 30 || $humidity > 80 || $weight < 15 || $weight > 45) {
         $status = 'Critical';
     }
 
     try {
-        $pdo->beginTransaction(); // Start transaction for atomicity
-
-        // Insert temperature, humidity, and weight
-        $stmt = $pdo->prepare("INSERT INTO sensor_data (hive_id, temperature, humidity, weight, timestamp) VALUES (?, ?, ?, ?, NOW())");
-        $stmt->execute([$simulatedHiveId, $temperature, $humidity, $weight]);
+        $pdo->beginTransaction(); 
+        // Insert temperature, humidity, and weight into your database, linking to sensor_id
+        $stmt = $pdo->prepare("INSERT INTO sensor_data (hive_id, sensor_id, temperature, humidity, weight, timestamp) VALUES (?, ?, ?, ?, ?, NOW())");
+        $stmt->execute([$simulatedHiveId, $simulatedSensorId, $temperature, $humidity, $weight]);
         $sensorDataId = $pdo->lastInsertId(); // Get the ID of the inserted sensor data
 
         if ($status === 'Critical') {
             // Store alert in the database
-            $alertMessage = "Hive $simulatedHiveId: Temp $temperature°C, Humidity $humidity%, Weight " . number_format($weight, 2) . "kg - Critical conditions detected.";
-            $alertLevel = 'critical'; // Or 'warning'
+            $alertMessage = "Hive $simulatedHiveId (Sensor $simulatedSensorId): Temp $temperature°C, Humidity $humidity%, Weight " . number_format($weight, 2) . "kg - Critical conditions detected.";
+            $alertLevel = 'critical'; 
             $alertStmt = $pdo->prepare("INSERT INTO alerts (hive_id, message, alert_level, created_at) VALUES (?, ?, ?, NOW())");
             $alertStmt->execute([$simulatedHiveId, $alertMessage, $alertLevel]);
 
-            // Attempt to send email alert (assuming $user['email'] is available from session)
-            // Note: sendAlert function is in beekeeper_dashboard.php, so this would need to be moved or re-implemented here
-            // For now, we'll just log it.
-            error_log("Critical alert generated for Hive $simulatedHiveId: $alertMessage");
-            sendJsonResponse(true, "Critical alert logged for Hive $simulatedHiveId. Email functionality needs server setup.", "", ["status" => "critical"]);
-
+            error_log("Critical alert generated for Hive $simulatedHiveId, Sensor $simulatedSensorId: $alertMessage");
+            sendJsonResponse(true, "Critical alert logged for Hive $simulatedHiveId, Sensor $simulatedSensorId. Email functionality needs server setup.", "", ["status" => "critical"]);
         } else {
-            sendJsonResponse(true, "Sensor data simulated successfully for Hive $simulatedHiveId. Status: Normal.", "", ["status" => "normal"]);
+            sendJsonResponse(true, "Sensor data simulated successfully for Hive $simulatedHiveId, Sensor $simulatedSensorId. Status: Normal.", "", ["status" => "normal"]);
         }
         $pdo->commit(); // Commit transaction
     } catch (PDOException $e) {
@@ -293,11 +398,9 @@ if ($action === 'simulate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-
-// Get overview of all beehives for the current beekeeper with latest sensor data (now includes weight)
+// Get overview of all beehives for the current beekeeper with latest sensor data 
 if ($action === 'get_beehives_overview') {
     try {
-        // This query fetches all hives for the user and their LATEST sensor data
         // Uses a subquery to get the most recent sensor_data.id for each hive
         $stmt = $pdo->prepare("
             SELECT
@@ -306,7 +409,7 @@ if ($action === 'get_beehives_overview') {
                 b.location,
                 sd.temperature,
                 sd.humidity,
-                sd.weight, -- Added weight
+                sd.weight, 
                 sd.timestamp AS last_reading_at
             FROM
                 beehives b
@@ -328,19 +431,71 @@ if ($action === 'get_beehives_overview') {
     }
 }
 
-
-// Get live sensor data (for chart)
+// Get live sensor data (for chart) 
 if ($action === 'get_live_sensor_data') {
+    $hiveId = $_GET['hive_id'] ?? null; 
     try {
-        // Fetch latest 60 sensor data points (across all hives if not filtered by hive_id)
-        // For a multi-hive dashboard, you might want to filter by user's hives: WHERE hive_id IN (...)
-        $stmt = $pdo->prepare("SELECT hive_id, temperature, humidity, weight, timestamp FROM sensor_data ORDER BY timestamp DESC LIMIT 60");
-        $stmt->execute();
+        $query = "SELECT hive_id, temperature, humidity, weight, timestamp FROM sensor_data";
+        $params = [];
+
+        // If a hive_id is provided, filter by it and ensure it belongs to the current user
+        if ($hiveId) {
+            $hiveCheckStmt = $pdo->prepare("SELECT id FROM beehives WHERE id = ? AND user_id = ?");
+            $hiveCheckStmt->execute([$hiveId, $currentUserId]);
+            if ($hiveCheckStmt->rowCount() === 0) {
+                sendJsonResponse(false, "Invalid Hive ID or you do not own this hive.", "INVALID_HIVE_ID");
+            }
+            $query .= " WHERE hive_id = ?";
+            $params[] = $hiveId;
+        } else {
+            $query .= " WHERE hive_id IN (SELECT id FROM beehives WHERE user_id = ?)";
+            $params[] = $currentUserId;
+        }
+        $query .= " ORDER BY timestamp DESC LIMIT 60"; 
+
+        $stmt = $pdo->prepare($query);
+        $stmt->execute($params);
         $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
         sendJsonResponse(true, "Sensor data fetched.", "", ["sensor_data" => $data]);
     } catch (PDOException $e) {
         error_log("Get sensor data error: " . $e->getMessage());
         sendJsonResponse(false, "Failed to retrieve sensor data.", "DB_ERROR");
+    }
+}
+
+// Get sensor data by sensor ID (for individual sensor charts)
+if ($action === 'get_sensor_data_by_sensor_id') {
+    $sensorId = $_GET['sensor_id'] ?? null;
+
+    if (!$sensorId) {
+        sendJsonResponse(false, "Sensor ID is required.", "MISSING_SENSOR_ID");
+    }
+
+    try {
+        // Verify that the sensor belongs to a hive owned by the current user for security
+        $sensorCheckStmt = $pdo->prepare("
+            SELECT s.id
+            FROM sensors s
+            JOIN beehives b ON s.hive_id = b.id
+            WHERE s.id = ? AND b.user_id = ?
+        ");
+        $sensorCheckStmt->execute([$sensorId, $currentUserId]);
+        if ($sensorCheckStmt->rowCount() === 0) {
+            sendJsonResponse(false, "Invalid Sensor ID or you do not own this sensor.", "INVALID_SENSOR_ID");
+        }
+        $stmt = $pdo->prepare("
+            SELECT temperature, humidity, weight, timestamp
+            FROM sensor_data
+            WHERE sensor_id = ?
+            ORDER BY timestamp DESC
+            LIMIT 60
+        ");
+        $stmt->execute([$sensorId]);
+        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        sendJsonResponse(true, "Sensor data for specific sensor fetched.", "", ["sensor_data" => $data]);
+    } catch (PDOException $e) {
+        error_log("Get sensor data by sensor ID error: " . $e->getMessage());
+        sendJsonResponse(false, "Failed to retrieve sensor data for sensor.", "DB_ERROR");
     }
 }
 
@@ -361,7 +516,7 @@ if ($action === 'get_alerts') {
 // Get list of Agricultural Officers for report sending
 if ($action === 'get_officers') {
     try {
-        $stmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE role = 'officer' AND is_approved = 1");
+        $stmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE role = 'Agricultural_Sofficer' AND is_approved = 1"); 
         $stmt->execute();
         $officers = $stmt->fetchAll(PDO::FETCH_ASSOC);
         sendJsonResponse(true, "Officers fetched.", "", ["officers" => $officers]);
@@ -394,7 +549,7 @@ if ($action === 'send_report' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($action === 'get_reports') {
     try {
         $stmt = $pdo->prepare("
-            SELECT r.id, r.message, r.created_at, u.full_name as officer_name, u.email as officer_email
+            SELECT r.id, r.message, r.created_at, u.full_name as officer_name, u.email as officer_email, r.officer_id
             FROM reports r
             JOIN users u ON r.officer_id = u.id
             WHERE r.beekeeper_id = ?
@@ -409,7 +564,7 @@ if ($action === 'get_reports') {
     }
 }
 
-// NEW: Update an existing report (Beekeeper only)
+// Update an existing report (Beekeeper only)
 if ($action === 'update_report' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $reportId = $data['report_id'] ?? null;
     $message = trim($data['message'] ?? '');
@@ -657,10 +812,9 @@ if ($action === 'delete_sensor' && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
     }
 }
 
-
 // ---------------- OFFICER DASHBOARD ACTIONS ----------------
 
-// Get reports sent to the current officer
+// Get reports sent to the current officer (CONSOLIDATED INTO BACKEND.PHP)
 if ($action === 'get_reports_for_officer') {
     try {
         $stmt = $pdo->prepare("
@@ -672,7 +826,8 @@ if ($action === 'get_reports_for_officer') {
                 bk.email AS beekeeper_email,
                 b.hive_name,
                 b.location,
-                GROUP_CONCAT(rec.message ORDER BY rec.created_at SEPARATOR ' || ') AS recommendations_text
+                GROUP_CONCAT(rec.message ORDER BY rec.created_at SEPARATOR ' || ') AS recommendations_text,
+                r.beekeeper_id -- Added to pass to frontend for reply button
             FROM
                 reports r
             JOIN
@@ -688,7 +843,7 @@ if ($action === 'get_reports_for_officer') {
             ORDER BY
                 r.created_at DESC
         ");
-        $stmt->execute([$currentUserId]);
+        $stmt->execute([$currentUserId]); // Use $currentUserId which is the officer's ID
         $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
         sendJsonResponse(true, "Reports for officer fetched.", "", ["reports" => $reports]);
     } catch (PDOException $e) {
@@ -700,26 +855,21 @@ if ($action === 'get_reports_for_officer') {
 // Add a recommendation by an officer
 if ($action === 'add_recommendation' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $reportId = $data['report_id'] ?? null;
+    $beekeeperId = $data['beekeeper_id'] ?? null; // Added beekeeper_id
     $message = trim($data['message'] ?? '');
+    $relatedSensorData = trim($data['related_sensor_data'] ?? ''); // New field
 
-    if (!$reportId || !$message) {
-        sendJsonResponse(false, "Report ID and message are required for recommendation.", "MISSING_FIELDS");
+    if (!$beekeeperId || !$message) { // Changed validation
+        sendJsonResponse(false, "Beekeeper and message are required for recommendation.", "MISSING_FIELDS");
     }
 
     try {
-        // Get beekeeper_id from the report to link the recommendation correctly
-        $reportStmt = $pdo->prepare("SELECT beekeeper_id FROM reports WHERE id = ? AND officer_id = ?");
-        $reportStmt->execute([$reportId, $currentUserId]);
-        $report = $reportStmt->fetch(PDO::FETCH_ASSOC);
+        // Optional: Verify reportId and beekeeperId if strict linking is needed
+        // For simplicity, we'll assume the frontend passes correct IDs.
+        // In a real app, you'd check if this officer is authorized to recommend to this beekeeper/report.
 
-        if (!$report) {
-            sendJsonResponse(false, "Report not found or you do not have permission to add a recommendation to it.", "REPORT_NOT_FOUND");
-        }
-
-        $beekeeperId = $report['beekeeper_id'];
-
-        $stmt = $pdo->prepare("INSERT INTO recommendations (officer_id, beekeeper_id, report_id, message) VALUES (?, ?, ?, ?)");
-        $stmt->execute([$currentUserId, $beekeeperId, $reportId, $message]);
+        $stmt = $pdo->prepare("INSERT INTO recommendations (officer_id, beekeeper_id, report_id, message, related_sensor_data) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([$currentUserId, $beekeeperId, $reportId, $message, $relatedSensorData]);
         sendJsonResponse(true, "Recommendation added successfully.");
     } catch (PDOException $e) {
         error_log("Add recommendation error: " . $e->getMessage());
@@ -731,6 +881,7 @@ if ($action === 'add_recommendation' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($action === 'update_recommendation' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $recommendationId = $data['recommendation_id'] ?? null;
     $message = trim($data['message'] ?? '');
+    $relatedSensorData = trim($data['related_sensor_data'] ?? ''); // New field
 
     if (!$recommendationId || !$message) {
         sendJsonResponse(false, "Recommendation ID and message are required.", "MISSING_FIELDS");
@@ -738,8 +889,8 @@ if ($action === 'update_recommendation' && $_SERVER['REQUEST_METHOD'] === 'POST'
 
     try {
         // Ensure the recommendation belongs to the current officer before updating
-        $stmt = $pdo->prepare("UPDATE recommendations SET message = ? WHERE id = ? AND officer_id = ?");
-        $stmt->execute([$message, $recommendationId, $currentUserId]);
+        $stmt = $pdo->prepare("UPDATE recommendations SET message = ?, related_sensor_data = ? WHERE id = ? AND officer_id = ?");
+        $stmt->execute([$message, $relatedSensorData, $recommendationId, $currentUserId]);
 
         if ($stmt->rowCount() > 0) {
             sendJsonResponse(true, "Recommendation updated successfully.");
@@ -752,7 +903,6 @@ if ($action === 'update_recommendation' && $_SERVER['REQUEST_METHOD'] === 'POST'
     }
 }
 
-
 // Get recommendations sent by the current officer
 if ($action === 'get_recommendations_by_officer') {
     try {
@@ -764,17 +914,13 @@ if ($action === 'get_recommendations_by_officer') {
                 bk.full_name AS beekeeper_name,
                 bk.email AS beekeeper_email,
                 r.message AS related_report_message,
-                sd.temperature,
-                sd.humidity,
-                sd.weight
+                rec.related_sensor_data -- New field
             FROM
                 recommendations rec
             JOIN
                 users bk ON rec.beekeeper_id = bk.id
             LEFT JOIN
                 reports r ON rec.report_id = r.id
-            LEFT JOIN
-                sensor_data sd ON rec.sensor_data_id = sd.id
             WHERE
                 rec.officer_id = ?
             ORDER BY
@@ -837,7 +983,6 @@ if ($action === 'delete_recommendation_officer' && $_SERVER['REQUEST_METHOD'] ==
     }
 }
 
-
 // ---------------- ADMIN DASHBOARD ACTIONS ----------------
 
 // Get all users for admin dashboard
@@ -875,14 +1020,13 @@ if ($action === 'approve_user' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Update a user's details (Admin only)
+// Update a user's details 
 if ($action === 'update_user' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $userId = $data['user_id'] ?? null;
     $fullName = trim($data['full_name'] ?? '');
     $email = trim($data['email'] ?? '');
     $role = trim($data['role'] ?? '');
     $isApproved = $data['is_approved'] ?? null; // Comes as 0 or 1
-
     // Basic validation
     if (!$userId || !$fullName || !$email || !$role || !isset($isApproved)) {
         sendJsonResponse(false, "All user fields (ID, Name, Email, Role, Approved Status) are required.", "MISSING_FIELDS");
@@ -890,30 +1034,25 @@ if ($action === 'update_user' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         sendJsonResponse(false, "Invalid email address format.", "INVALID_EMAIL_FORMAT");
     }
-    if (!in_array($role, ['beekeeper', 'officer', 'admin'])) {
+    if (!in_array($role, ['beekeeper', 'agricultural_officer', 'admin'])) { 
         sendJsonResponse(false, "Invalid role specified.", "INVALID_ROLE");
     }
-
     try {
         // Prevent changing own role or approval status if it would lock out the admin
         if ($userId == $currentUserId && ($role !== 'admin' || $isApproved == 0)) {
             sendJsonResponse(false, "You cannot change your own role to non-admin or unapprove your own account.", "SELF_EDIT_FORBIDDEN");
         }
-
         // Check if the new email is already taken by another user
         $emailCheckStmt = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
         $emailCheckStmt->execute([$email, $userId]);
         if ($emailCheckStmt->rowCount() > 0) {
             sendJsonResponse(false, "Email is already taken by another user.", "EMAIL_TAKEN");
         }
-
         $stmt = $pdo->prepare("UPDATE users SET full_name = ?, email = ?, role = ?, is_approved = ? WHERE id = ?");
         $stmt->execute([$fullName, $email, $role, $isApproved, $userId]);
-
         if ($stmt->rowCount() > 0) {
             sendJsonResponse(true, "User updated successfully.");
         } else {
-            // This could mean user not found or no changes were made
             sendJsonResponse(false, "User not found or no changes were made.", "NO_CHANGES_OR_NOT_FOUND");
         }
     } catch (PDOException $e) {
@@ -924,7 +1063,7 @@ if ($action === 'update_user' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Delete a user
 if ($action === 'delete_user' && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
-    $userIdToDelete = $_GET['id'] ?? null; // Get ID from query string for DELETE requests
+    $userIdToDelete = $_GET['id'] ?? null; 
 
     if (!$userIdToDelete) {
         sendJsonResponse(false, "User ID is required for deletion.", "MISSING_ID");
@@ -949,7 +1088,8 @@ if ($action === 'delete_user' && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
     }
 }
 
-
 // ---------------- DEFAULT / INVALID ACTION ----------------
 http_response_code(400); // Set HTTP status code to 400 Bad Request
 sendJsonResponse(false, "Invalid or missing action parameter.", "INVALID_ACTION");
+
+

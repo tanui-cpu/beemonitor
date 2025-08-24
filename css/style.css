@@ -21,7 +21,7 @@ body.faq-page-bg {
 body.index-page-bg {
     height: 100%;
     background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); /* Gradient for index page */
-    color: #fff; /* White text for contrast on gradient */
+    color: #967f7f; /* White text for contrast on gradient */
 }
 
 /* Specific background for About page */
@@ -84,15 +84,15 @@ body.about-page-bg {
 
 /* Navbar for Index page (transparent on gradient) */
 .navbar-index {
-    background-color: rgba(0,0,0,0.2);
+    background-color: rgba(254, 251, 251, 0.2);
 }
 .navbar-index a.nav-link, .navbar-index .navbar-brand {
-    color: #fffefe !important;
+    color: #7e6f6f !important;
     font-weight: 600;
 }
 .navbar-index a.nav-link:hover {
     color: #333 !important;
-    background: #fffdfd !important;
+    background: hsl(0, 0%, 100%) !important;
     border-radius: 5px;
 }
 
@@ -417,3 +417,5 @@ footer {
     background: rgba(0,0,0,0.15);
     color: #fff;
 }
+
+

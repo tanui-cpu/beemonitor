@@ -69,16 +69,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Bee Farming System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css"> <!-- Consolidated CSS -->
+    <link rel="stylesheet" href="css/style.css"> 
 </head>
 <body>
 
 <nav class="navbar navbar-expand-lg navbar-warning bg-warning">
     <div class="container-fluid">
-        <a class="navbar-brand fw-bold text-dark" href="#">🐝 Bee Monitoring</a>
+        <a class="navbar-brand fw-bold text-dark" href="#">Bee Monitoring System</a>
         <div class="d-flex">
-            <a href="login.php" class="btn btn-dark me-2">Login</a>
-            <a href="register.php" class="btn btn-dark">Register</a>
+            <a href="index.php" class="btn btn-dark me-2">Home</a>
         </div>
     </div>
 </nav>
@@ -97,7 +96,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="mb-3">
             <input type="password" class="form-control" id="password" name="password" placeholder="Password" required>
         </div>
-        <button type="submit" class="btn btn-primary-custom btn-block">Login</button>
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+        <button type="submit" class="btn btn-primary-custom">Login</button>
+        <a href="password/forgotPassword.php" class="btn btn-link">Forgot Password?</a>
+    </div>
     </form>
     <p class="mt-3 text-muted">Don't have an account? <a href="register.php">Register here</a></p>
 </div>

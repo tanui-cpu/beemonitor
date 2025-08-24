@@ -45,15 +45,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['simulate'])) {
     if (!$hive) {
         $_SESSION['alert_message'] = "Cannot simulate data: No beehives registered for your account. Please add one first!";
         $_SESSION['alert_type'] = "danger";
-        header("Location: beekeeper_dashboard.php");
+        header("Location: beekeeper.php");
         exit();
     }
 
-    $simulatedHiveId = $hive['id']; // Use the actual hive ID
+    $simulatedHiveId = $hive['id'];
 
-    $temperature = rand(25, 45); // Simulate temperature within a range
-    $humidity = rand(20, 60);   // Simulate humidity within a range
-    $weight = rand(10, 50) + (rand(0, 99) / 100); // Simulate weight with 2 decimal places
+    // Fetch a random sensor associated with this hive
+    $sensorStmt = $pdo->prepare("SELECT id FROM sensors WHERE hive_id = ? ORDER BY RAND() LIMIT 1");
+    $sensorStmt->execute([$simulatedHiveId]);
+    $sensor = $sensorStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$sensor) {
+        $_SESSION['alert_message'] = "Cannot simulate data: No sensors registered for Hive ID " . $simulatedHiveId . ". Please register a sensor first!";
+        $_SESSION['alert_type'] = "danger";
+        header("Location: beekeeper.php");
+        exit();
+    }
+
+    $simulatedSensorId = $sensor['id']; // Get the sensor ID
+
+    $temperature = rand(25, 45); 
+    $humidity = rand(20, 60);   
+    $weight = rand(10, 50) + (rand(0, 99) / 100); 
 
     $status = 'Normal';
     // More realistic critical conditions: outside optimal range (e.g., 32-35C temp, 50-70% humidity)
@@ -65,28 +79,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['simulate'])) {
     try {
         $pdo->beginTransaction(); // Start transaction for atomicity
 
-        // Insert temperature, humidity, and weight
-        $stmt = $pdo->prepare("INSERT INTO sensor_data (hive_id, temperature, humidity, weight, timestamp) VALUES (?, ?, ?, ?, NOW())");
-        $stmt->execute([$simulatedHiveId, $temperature, $humidity, $weight]);
+        // Insert temperature, humidity, and weight, linking to sensor_id
+        $stmt = $pdo->prepare("INSERT INTO sensor_data (hive_id, sensor_id, temperature, humidity, weight, timestamp) VALUES (?, ?, ?, ?, ?, NOW())");
+        $stmt->execute([$simulatedHiveId, $simulatedSensorId, $temperature, $humidity, $weight]);
         $sensorDataId = $pdo->lastInsertId(); // Get the ID of the inserted sensor data
 
         if ($status === 'Critical') {
             // Store alert in the database
-            $alertMessage = "Hive $simulatedHiveId: Temp $temperature°C, Humidity $humidity%, Weight " . number_format($weight, 2) . "kg - Critical conditions detected.";
+            $alertMessage = "Hive $simulatedHiveId (Sensor $simulatedSensorId): Temp $temperature°C, Humidity $humidity%, Weight " . number_format($weight, 2) . "kg - Critical conditions detected.";
             $alertLevel = 'critical'; // Or 'warning'
             $alertStmt = $pdo->prepare("INSERT INTO alerts (hive_id, message, alert_level, created_at) VALUES (?, ?, ?, NOW())");
             $alertStmt->execute([$simulatedHiveId, $alertMessage, $alertLevel]);
 
             // Attempt to send email alert
             if (sendAlert($user['email'], $simulatedHiveId, $temperature, $humidity, $weight)) {
-                $_SESSION['alert_message'] = "Critical alert sent to " . htmlspecialchars($user['email']) . " for Hive $simulatedHiveId and logged.";
+                $_SESSION['alert_message'] = "Critical alert sent to " . htmlspecialchars($user['email']) . " for Hive $simulatedHiveId (Sensor $simulatedSensorId) and logged.";
                 $_SESSION['alert_type'] = "success";
             } else {
-                $_SESSION['alert_message'] = "Critical alert logged for Hive $simulatedHiveId, but email failed to send. Check server mail configuration.";
+                $_SESSION['alert_message'] = "Critical alert logged for Hive $simulatedHiveId (Sensor $simulatedSensorId), but email failed to send. Check server mail configuration.";
                 $_SESSION['alert_type'] = "warning";
             }
         } else {
-            $_SESSION['alert_message'] = "Sensor data simulated successfully for Hive $simulatedHiveId. Status: Normal.";
+            $_SESSION['alert_message'] = "Sensor data simulated successfully for Hive $simulatedHiveId (Sensor $simulatedSensorId). Status: Normal.";
             $_SESSION['alert_type'] = "info";
         }
         $pdo->commit(); // Commit transaction
@@ -97,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['simulate'])) {
         $_SESSION['alert_type'] = "danger";
     }
 
-    header("Location: beekeeper_dashboard.php"); // Redirect to self to clear POST and show alert
+    header("Location: beekeeper.php"); // Redirect to self to clear POST and show alert
     exit();
 }
 
@@ -106,12 +120,6 @@ $alertMessage = $_SESSION['alert_message'] ?? '';
 $alertType = $_SESSION['alert_type'] ?? 'info';
 unset($_SESSION['alert_message']);
 unset($_SESSION['alert_type']);
-
-// Initial data load for chart (will be updated by AJAX)
-// Fetch latest 60 sensor data points for the user's hives to allow horizontal scrolling
-$chartStmt = $pdo->prepare("SELECT hive_id, temperature, humidity, weight, timestamp FROM sensor_data ORDER BY timestamp ASC LIMIT 60");
-$chartStmt->execute();
-$initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
 
 ?>
 
@@ -122,16 +130,10 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Beekeeper Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css"> <!-- Consolidated CSS -->
+    <link rel="stylesheet" href="css/style.css"> 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="js/utils.js"></script> <!-- Common utilities -->
-    <script>
-        // --- NO THINGSPEAK CONFIGURATION ---
-        // ThingSpeak integration has been removed as per request.
-        // The chart will now always fetch data from your local backend.
-        // ------------------------------------
-    </script>
+    <script src="js/utils.js"></script> 
 </head>
 <body>
 
@@ -148,10 +150,9 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
 <!-- Navigation Bar -->
 <nav class="navbar navbar-expand-lg navbar-warning bg-warning">
     <div class="container">
-        <a class="navbar-brand fw-bold text-dark" href="#">🐝 Bee Monitoring</a>
+        <a class="navbar-brand fw-bold text-dark" href="#">Bee Monitoring System</a>
         <div class="ms-auto d-flex align-items-center">
             <span class="me-3 text-dark">Hi, <?= htmlspecialchars($user['full_name']) ?></span>
-            <!-- Logout Button (triggers Bootstrap Modal) -->
             <button type="button" class="btn btn-sm btn-dark" data-bs-toggle="modal" data-bs-target="#logoutConfirmModal">
                 Logout
             </button>
@@ -173,40 +174,47 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     <!-- Beehive Cards Section -->
     <div id="beehivesOverview" class="row">
         <p class="text-center text-muted">Loading beehives...</p>
-        <!-- Beehive cards will be dynamically loaded here by JavaScript -->
     </div>
 
-    <hr class="my-5"> <!-- Separator -->
+    <hr class="my-5"> 
 
     <div class="row">
-        <div class="col-md-6">
+        <div class="col-md-4"> 
             <!-- Simulate Button -->
-            <div class="card p-3 mb-4">
-                <h5>🔄 Simulate Data</h5>
-                <form method="POST">
+            <div class="card p-3 mb-4 h-100 d-flex flex-column justify-content-between">
+                <div>
+                    <h5>🔄 Simulate Data</h5>
+                    <p class="text-muted small">Generate new sensor readings for one of your hives.</p>
+                </div>
+                <form method="POST" class="mt-auto">
                     <input type="hidden" name="simulate" value="1">
                     <button type="submit" class="btn btn-primary-custom w-100">Simulate Sensor Data</button>
                 </form>
             </div>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-4"> 
             <!-- Register New Sensor Button -->
-            <div class="card p-3 mb-4">
-                <h5>➕ Register New Sensor</h5>
-                <button type="button" class="btn btn-info-custom w-100" data-bs-toggle="modal" data-bs-target="#registerSensorModal">
+            <div class="card p-3 mb-4 h-100 d-flex flex-column justify-content-between">
+                <div>
+                    <h5>➕ Register New Sensor</h5>
+                    <p class="text-muted small">Add a new sensor to monitor your beehives.</p>
+                </div>
+                <button type="button" class="btn btn-info-custom w-100 mt-auto" data-bs-toggle="modal" data-bs-target="#registerSensorModal">
                     Register Sensor
                 </button>
             </div>
         </div>
-    </div>
-
-    <h3 class="mb-4">📊 Sensor Data Trends</h3>
-
-    <!-- Sensor Data Chart -->
-    <div class="card p-3 mb-4">
-        <h5>📈 Temperature & Humidity Trends Over Time</h5>
-        <div class="chart-container-wrapper">
-            <canvas id="liveChart" height="300"></canvas> <!-- Changed height from 100 to 300 -->
+        <div class="col-md-4"> 
+            <!-- Send Report Button -->
+            <div class="card p-3 mb-4 h-100 d-flex flex-column justify-content-between">
+                <div>
+                    <h5>📧 Send Report</h5>
+                    <p class="text-muted small">Send a detailed report to an Agricultural Officer.</p>
+                </div>
+                <button type="button" class="btn btn-success-custom w-100 mt-auto" data-bs-toggle="modal" data-bs-target="#sendReportModal">
+                    Send Report
+                </button>
+            </div>
         </div>
     </div>
 
@@ -263,7 +271,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Send Report Modal -->
+<!-- Send Report Modal - This is where the beekeeper types their message -->
 <div class="modal fade" id="sendReportModal" tabindex="-1" aria-labelledby="sendReportModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -281,6 +289,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
                     </div>
                     <div class="mb-3">
                         <label for="reportMessage" class="form-label">Report Message:</label>
+                        <!-- This is the textarea for the beekeeper to type their custom message -->
                         <textarea class="form-control" id="reportMessage" rows="5" required></textarea>
                     </div>
                     <div id="reportFormMessage" class="alert mt-3" style="display:none;"></div>
@@ -294,7 +303,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- NEW: Edit Report Modal -->
+<!-- Edit Report Modal -->
 <div class="modal fade" id="editReportModal" tabindex="-1" aria-labelledby="editReportModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -326,7 +335,7 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- View Report Details Modal -->
+<!-- View Report Details Modal - Displays the full report message -->
 <div class="modal fade" id="viewReportModal" tabindex="-1" aria-labelledby="viewReportModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -368,6 +377,29 @@ $initialChartData = $chartStmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 </div>
+
+<!-- View Alert Details Modal -->
+<div class="modal fade" id="viewAlertModal" tabindex="-1" aria-labelledby="viewAlertModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewAlertModalLabel">Alert Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>Hive:</strong> <span id="viewAlertHiveName"></span></p>
+                <p><strong>Level:</strong> <span id="viewAlertLevel"></span></p>
+                <p><strong>Date/Time:</strong> <span id="viewAlertDateTime"></span></p>
+                <p><strong>Message:</strong></p>
+                <div id="viewAlertMessage" class="alert" style="white-space: pre-wrap;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <!-- Register Sensor Modal -->
 <div class="modal fade" id="registerSensorModal" tabindex="-1" aria-labelledby="registerSensorModalLabel" aria-hidden="true">

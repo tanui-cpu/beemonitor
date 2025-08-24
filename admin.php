@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'dbconnect.php'; // Use require_once for consistency
+require_once 'dbconnect.php'; 
 
 // Check if logged in and role is 'admin'
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') { // Use $_SESSION['role']
@@ -10,8 +10,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') { // Use $_SE
 
 // Get current admin info for display
 $adminId = $_SESSION['user_id'];
-$adminName = $_SESSION['full_name']; // Use $_SESSION['full_name']
-
+$adminName = $_SESSION['full_name']; 
 // Handle logout via GET request (from the logout modal)
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     session_unset();
@@ -19,8 +18,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     header("Location: login.php");
     exit();
 }
-
-// No direct POST handling here, all actions are handled via AJAX to backend.php
 ?>
 
 <!DOCTYPE html>
@@ -46,12 +43,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
 </div>
 
 <!-- Navigation Bar -->
-<nav class="navbar navbar-expand-lg navbar-custom">
+<nav class="navbar navbar-expand-lg navbar-warning bg-warning">
     <div class="container">
-        <a class="navbar-brand" href="admin_dashboard.php">⚙️ Admin Dashboard</a>
+        <a class="navbar-brand" href="admin.php"> Admin Dashboard</a>
         <div class="ms-auto d-flex align-items-center">
             <span class="me-3 text-white">Hi, <?= htmlspecialchars($adminName) ?></span>
-            <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#logoutConfirmModal">
+            <button type="button" class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#logoutConfirmModal">
                 Logout
             </button>
         </div>
@@ -71,7 +68,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
             <p class="text-center text-muted">Loading users...</p>
         </div>
     </div>
-
 </div>
 
 <!-- Logout Confirmation Modal -->
@@ -93,7 +89,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     </div>
 </div>
 
-<!-- NEW: Edit User Modal -->
+<!-- Edit User Modal -->
 <div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -154,6 +150,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     </div>
 </div>
 
-<script src="js/admin_dashboard.js"></script> <!-- Dashboard specific JS -->
+<script src="js/admin.js"></script> 
 </body>
 </html>

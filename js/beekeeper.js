@@ -1,186 +1,291 @@
-// Ensure Chart.js is loaded before this script if it's used here
-// const ctx = document.getElementById('liveChart').getContext('2d'); // This line needs Chart.js
-// liveChart initialization and update logic
+// Map to store Chart.js instances for beehives, keyed by hive ID
+const hiveCharts = new Map();
+// NEW: Map to store Chart.js instances for sensors, keyed by sensor ID
+const sensorCharts = new Map();
 
-// Initial Chart.js setup
-const ctx = document.getElementById('liveChart').getContext('2d');
-const liveChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-        labels: [], // Will be populated by fetchSensorData
-        datasets: [
-            {
-                label: 'Temperature (°C)',
-                borderColor: '#e74c3c',
-                backgroundColor: 'rgba(231, 76, 60, 0.2)',
-                data: [], // Will be populated by fetchSensorData
-                fill: false,
-                tension: 0.1
-            },
-            {
-                label: 'Humidity (%)',
-                borderColor: '#3498db',
-                backgroundColor: 'rgba(52, 152, 219, 0.2)',
-                data: [], // Will be populated by fetchSensorData
-                fill: false,
-                tension: 0.1
-            },
-            {
-                label: 'Weight (kg)', // New dataset for weight
-                borderColor: '#8e44ad', // Purple color
-                backgroundColor: 'rgba(142, 68, 173, 0.2)',
-                data: [], // Will be populated by fetchSensorData
-                fill: false,
-                tension: 0.1
-            }
-        ]
-    },
-    options: {
-        responsive: false, // Set to false to allow fixed width and horizontal scrolling
-        maintainAspectRatio: false, // Allow height to be controlled by CSS
-        scales: {
-            y: {
-                beginAtZero: true,
-                title: {
-                    display: true,
-                    text: 'Value'
+// Function to initialize a new Chart.js instance for a specific canvas ELEMENT
+function initializeChart(canvasElement, chartTitle = 'Sensor Data Trend') {
+    // Ensure the canvasElement is valid before proceeding
+    if (!canvasElement) {
+        console.error("Canvas element not provided or is null for chart initialization.");
+        return null; // Return null if the element is invalid
+    }
+    const ctx = canvasElement.getContext('2d');
+    const newChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [], // Will be populated by fetchSensorData
+            datasets: [
+                {
+                    label: 'Temperature (°C)',
+                    borderColor: '#e74c3c',
+                    backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                    data: [], // Will be populated by fetchSensorData
+                    fill: false,
+                    tension: 0.1
+                },
+                {
+                    label: 'Humidity (%)',
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                    data: [], // Will be populated by fetchSensorData
+                    fill: false,
+                    tension: 0.1
+                },
+                {
+                    label: 'Weight (kg)', // New dataset for weight
+                    borderColor: '#8e44ad', // Purple color
+                    backgroundColor: 'rgba(142, 68, 173, 0.2)',
+                    data: [], // Will be populated by fetchSensorData
+                    fill: false,
+                    tension: 0.1
                 }
-            },
-            x: {
-                title: {
-                    display: true,
-                    text: 'Time'
-                }
-            }
+            ]
         },
-        plugins: {
-            tooltip: {
-                mode: 'index',
-                intersect: false
+        options: {
+            responsive: true, // Make charts responsive within their containers
+            maintainAspectRatio: false, // Allow height to be controlled by CSS
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Value'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Time'
+                    }
+                }
             },
-            legend: {
-                display: true,
-                position: 'top'
+            plugins: {
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                },
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                title: { // Add chart title
+                    display: true,
+                    text: chartTitle
+                }
             }
         }
-    }
-});
-
-// Function to fetch and update sensor data for the chart
-async function fetchSensorData() {
-    // ThingSpeak integration removed. Always fetch from local backend.
-    const sensorData = await fetchLocalSensorData();
-
-    // Process and update chart
-    if (sensorData && sensorData.length > 0) {
-        const sortedData = sensorData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-        const labels = sortedData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        const temperatures = sortedData.map(d => d.temperature);
-        const humidities = sortedData.map(d => d.humidity);
-        const weights = sortedData.map(d => d.weight);
-
-        liveChart.data.labels = labels;
-        liveChart.data.datasets[0].data = temperatures;
-        liveChart.data.datasets[1].data = humidities;
-        liveChart.data.datasets[2].data = weights;
-        liveChart.update();
-    } else {
-        console.warn('No sensor data available to display on chart.');
-        liveChart.data.labels = [];
-        liveChart.data.datasets[0].data = [];
-        liveChart.data.datasets[1].data = [];
-        liveChart.data.datasets[2].data = [];
-        liveChart.update();
-    }
+    });
+    return newChart;
 }
 
-// Helper function to fetch data from your local backend
-async function fetchLocalSensorData() {
+// Function to fetch and update sensor data for a specific hive's chart
+async function fetchHiveSensorData(hiveId) {
     try {
-        const response = await fetch('backend.php?action=get_live_sensor_data');
+        // Fetch data for the specific hive from the local backend
+        const response = await fetch(`backend.php?action=get_live_sensor_data&hive_id=${hiveId}`);
         const data = await response.json();
-        if (data.success && data.sensor_data) {
-            console.log('Fetched data from local backend:', data.sensor_data);
-            return data.sensor_data;
-        } else {
-            console.error('Failed to fetch local sensor data:', data.message);
-            return [];
+        
+        const chart = hiveCharts.get(hiveId); // Get the specific chart instance
+
+        if (chart && data.success && data.sensor_data) {
+            const sensorData = data.sensor_data;
+            const sortedData = sensorData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+            const labels = sortedData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            const temperatures = sortedData.map(d => d.temperature);
+            const humidities = sortedData.map(d => d.humidity);
+            const weights = sortedData.map(d => d.weight);
+
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = temperatures;
+            chart.data.datasets[1].data = humidities;
+            chart.data.datasets[2].data = weights;
+            chart.update();
+        } else if (chart) {
+            // If no data or fetch failed, clear the chart
+            console.warn(`No sensor data available for Hive ${hiveId} or failed to fetch.`);
+            chart.data.labels = [];
+            chart.data.datasets[0].data = [];
+            chart.data.datasets[1].data = [];
+            chart.data.datasets[2].data = [];
+            chart.update();
         }
     } catch (error) {
-        console.error('Error fetching local sensor data:', error);
-        return [];
+        console.error(`Error fetching sensor data for Hive ${hiveId}:`, error);
+        const chart = hiveCharts.get(hiveId);
+        if (chart) {
+            // Clear chart on error
+            chart.data.labels = [];
+            chart.data.datasets[0].data = [];
+            chart.data.datasets[1].data = [];
+            chart.data.datasets[2].data = [];
+            chart.update();
+        }
+    }
+}
+
+// NEW: Function to fetch and update sensor data for a specific SENSOR's chart
+async function fetchSensorDataBySensorId(sensorId) {
+    try {
+        const response = await fetch(`backend.php?action=get_sensor_data_by_sensor_id&sensor_id=${sensorId}`);
+        const data = await response.json();
+
+        const chart = sensorCharts.get(sensorId); // Get the specific sensor chart instance
+
+        if (chart && data.success && data.sensor_data) {
+            const sensorData = data.sensor_data;
+            const sortedData = sensorData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+            const labels = sortedData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            const temperatures = sortedData.map(d => d.temperature);
+            const humidities = sortedData.map(d => d.humidity);
+            const weights = sortedData.map(d => d.weight);
+
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = temperatures;
+            chart.data.datasets[1].data = humidities;
+            chart.data.datasets[2].data = weights;
+            chart.update();
+        } else if (chart) {
+            console.warn(`No sensor data available for Sensor ${sensorId} or failed to fetch.`);
+            chart.data.labels = [];
+            chart.data.datasets[0].data = [];
+            chart.data.datasets[1].data = [];
+            chart.data.datasets[2].data = [];
+            chart.update();
+        }
+    } catch (error) {
+        console.error(`Error fetching sensor data for Sensor ${sensorId}:`, error);
+        const chart = sensorCharts.get(sensorId);
+        if (chart) {
+            chart.data.labels = [];
+            chart.data.datasets[0].data = [];
+            chart.data.datasets[1].data = [];
+            chart.data.datasets[2].data = [];
+            chart.update();
+        }
     }
 }
 
 
-// Function to fetch and display beehives overview (now includes weight)
+// Function to fetch and display beehives overview 
 async function fetchBeehivesOverview() {
     try {
         const response = await fetch('backend.php?action=get_beehives_overview');
         const data = await response.json();
         const beehivesOverviewDiv = document.getElementById('beehivesOverview');
-        beehivesOverviewDiv.innerHTML = ''; // Clear existing content
+        
+        // Use a temporary set to track hives that are currently in the fetched data
+        const fetchedHiveIds = new Set();
 
         if (data.success && data.hives_overview && data.hives_overview.length > 0) {
-            data.hives_overview.forEach(hive => {
-                const hiveCard = document.createElement('div');
-                hiveCard.className = 'col-md-6 col-lg-4'; // Bootstrap columns for responsive grid
-                hiveCard.innerHTML = `
-                    <div class="hive-card">
-                        <div class="hive-icon">🐝</div>
-                        <div class="hive-details">
-                            <h5>${htmlspecialchars(hive.hive_name || 'Unnamed Hive')}</h5>
-                            <p><small>📍 ${htmlspecialchars(hive.location || 'Unknown Location')}</small></p>
-                        </div>
-                        <div class="sensor-data-row">
-                            <div class="sensor-item temperature">
-                                <span class="icon">🌡️</span>
-                                Temp: <span class="sensor-value">${hive.temperature !== null ? htmlspecialchars(hive.temperature) + '°C' : 'N/A'}</span>
-                            </div>
-                            <div class="sensor-item humidity">
-                                <span class="icon">💧</span>
-                                Hum: <span class="sensor-value">${hive.humidity !== null ? htmlspecialchars(hive.humidity) + '%' : 'N/A'}</span>
-                            </div>
-                            <div class="sensor-item weight">
-                                <span class="icon">⚖️</span>
-                                Weight: <span class="sensor-value">${hive.weight !== null ? htmlspecialchars(hive.weight.toFixed(2)) + 'kg' : 'N/A'}</span>
-                            </div>
-                        </div>
-                        <div class="last-updated">
-                            <small>Last reading: ${hive.last_reading_at ? new Date(hive.last_reading_at).toLocaleString() : 'Never'}</small>
-                        </div>
-                        <div class="hive-actions w-100 text-end mt-2">
-                            <button class="btn btn-sm btn-info-custom edit-beehive-btn me-1"
-                                data-id="${hive.hive_id}"
-                                data-name="${htmlspecialchars(hive.hive_name)}"
-                                data-location="${htmlspecialchars(hive.location)}">Edit</button>
-                            <button class="btn btn-sm btn-danger delete-beehive-btn" data-id="${hive.hive_id}">Delete</button>
-                        </div>
-                    </div>
-                `;
-                beehivesOverviewDiv.appendChild(hiveCard);
-            });
+            for (const hive of data.hives_overview) {
+                fetchedHiveIds.add(hive.hive_id);
+                let hiveCardElement = document.getElementById(`hive-card-${hive.hive_id}`);
 
-            // Add event listeners for new buttons
+                if (!hiveCardElement) {
+                    // Create new card if it doesn't exist
+                    hiveCardElement = document.createElement('div');
+                    hiveCardElement.className = 'col-md-6 col-lg-4 mb-4';
+                    hiveCardElement.id = `hive-card-${hive.hive_id}`; // Assign an ID for easy lookup
+                    hiveCardElement.innerHTML = `
+                        <div class="hive-card card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">🐝 <span id="hive-name-${hive.hive_id}">${htmlspecialchars(hive.hive_name || 'Unnamed Hive')}</span></h5>
+                                <p class="card-subtitle mb-2 text-muted">📍 <span id="hive-location-${hive.hive_id}">${htmlspecialchars(hive.location || 'Unknown Location')}</span></p>
+                                <hr>
+                                <div class="sensor-data-row mb-3">
+                                    <div class="sensor-item temperature">
+                                        <span class="icon">🌡️</span>
+                                        Temp: <span class="sensor-value" id="hive-temp-${hive.hive_id}">${hive.temperature !== null ? htmlspecialchars(hive.temperature) + '°C' : 'N/A'}</span>
+                                    </div>
+                                    <div class="sensor-item humidity">
+                                        <span class="icon">💧</span>
+                                        Hum: <span class="sensor-value" id="hive-humidity-${hive.hive_id}">${hive.humidity !== null ? htmlspecialchars(hive.humidity) + '%' : 'N/A'}</span>
+                                    </div>
+                                    <div class="sensor-item weight">
+                                        <span class="icon">⚖️</span>
+                                        Weight: <span class="sensor-value" id="hive-weight-${hive.hive_id}">${hive.weight !== null ? htmlspecialchars(hive.weight.toFixed(2)) + 'kg' : 'N/A'}</span>
+                                    </div>
+                                </div>
+                                <div class="last-updated mb-3">
+                                    <small>Last reading: <span id="hive-last-reading-${hive.hive_id}">${hive.last_reading_at ? new Date(hive.last_reading_at).toLocaleString() : 'Never'}</span></small>
+                                </div>
+                                
+                                <h6 class="mt-3 mb-2">📈 Trend for <span id="hive-chart-title-${hive.hive_id}">${htmlspecialchars(hive.hive_name)}</span></h6>
+                                <div class="chart-container-wrapper" style="height: 350px;"> <!-- Increased height for hive charts -->
+                                    <canvas id="hiveChart-${hive.hive_id}"></canvas>
+                                </div>
+                            </div>
+                            <div class="card-footer text-end">
+                                <button class="btn btn-sm btn-info-custom edit-beehive-btn me-1"
+                                    data-id="${hive.hive_id}"
+                                    data-name="${htmlspecialchars(hive.hive_name)}"
+                                    data-location="${htmlspecialchars(hive.location)}">Edit</button>
+                                <button class="btn btn-sm btn-danger delete-beehive-btn" data-id="${hive.hive_id}">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                    beehivesOverviewDiv.appendChild(hiveCardElement);
+
+                    const canvasElement = document.getElementById(`hiveChart-${hive.hive_id}`);
+                    const chart = initializeChart(canvasElement, `Hive ${htmlspecialchars(hive.hive_name)} Trends`);
+                    if (chart) {
+                        hiveCharts.set(hive.hive_id, chart);
+                    }
+                } else {
+                    // Update existing card's data
+                    document.getElementById(`hive-name-${hive.hive_id}`).textContent = htmlspecialchars(hive.hive_name || 'Unnamed Hive');
+                    document.getElementById(`hive-location-${hive.hive_id}`).textContent = htmlspecialchars(hive.location || 'Unknown Location');
+                    document.getElementById(`hive-temp-${hive.hive_id}`).textContent = hive.temperature !== null ? htmlspecialchars(hive.temperature) + '°C' : 'N/A';
+                    document.getElementById(`hive-humidity-${hive.hive_id}`).textContent = hive.humidity !== null ? htmlspecialchars(hive.humidity) + '%' : 'N/A';
+                    document.getElementById(`hive-weight-${hive.hive_id}`).textContent = hive.weight !== null ? htmlspecialchars(hive.weight.toFixed(2)) + 'kg' : 'N/A';
+                    document.getElementById(`hive-last-reading-${hive.hive_id}`).textContent = hive.last_reading_at ? new Date(hive.last_reading_at).toLocaleString() : 'Never';
+                    document.getElementById(`hive-chart-title-${hive.hive_id}`).textContent = htmlspecialchars(hive.hive_name);
+                }
+                
+                // Always fetch data for the chart, whether new or existing
+                fetchHiveSensorData(hive.hive_id);
+            }
+
+            // Remove cards for hives that are no longer in the fetched data
+            for (const [hiveId, chartInstance] of hiveCharts.entries()) {
+                if (!fetchedHiveIds.has(hiveId)) {
+                    chartInstance.destroy();
+                    hiveCharts.delete(hiveId);
+                    const hiveCardToRemove = document.getElementById(`hive-card-${hiveId}`);
+                    if (hiveCardToRemove) {
+                        hiveCardToRemove.remove();
+                        console.log(`Removed card and destroyed chart for deleted hive: ${hiveId}`);
+                    }
+                }
+            }
+
+            // Re-add event listeners for all current buttons (newly created or existing)
             document.querySelectorAll('.edit-beehive-btn').forEach(button => {
-                button.addEventListener('click', (event) => {
+                button.onclick = (event) => { // Use onclick for simplicity or removeEventListener if using addEventListener
                     const hiveId = event.target.dataset.id;
                     const hiveName = event.target.dataset.name;
                     const hiveLocation = event.target.dataset.location;
                     showEditBeehiveModal(hiveId, hiveName, hiveLocation);
-                });
+                };
             });
 
             document.querySelectorAll('.delete-beehive-btn').forEach(button => {
-                button.addEventListener('click', (event) => {
+                button.onclick = (event) => {
                     const hiveId = event.target.dataset.id;
                     showDeleteConfirmModal('beehive', hiveId);
-                });
+                };
             });
 
         } else {
             beehivesOverviewDiv.innerHTML = '<p class="text-center text-muted">No beehives registered yet. Click "Add New Beehive" to get started!</p>';
+            // If no hives, destroy all existing charts
+            for (const [hiveId, chartInstance] of hiveCharts.entries()) {
+                chartInstance.destroy();
+                hiveCharts.delete(hiveId);
+            }
         }
     } catch (error) {
         console.error('Error fetching beehives overview:', error);
@@ -199,12 +304,29 @@ async function fetchAlerts() {
         if (data.success && data.alerts && data.alerts.length > 0) {
             data.alerts.forEach(alert => {
                 const alertItem = document.createElement('div');
-                alertItem.className = `alert alert-${alert.alert_level === 'critical' ? 'danger' : 'warning'} p-2 mb-2`;
+                alertItem.className = `alert alert-${alert.alert_level === 'critical' ? 'danger' : 'warning'} p-2 mb-2 clickable-alert`; // Added clickable-alert class
+                
+                // Store data attributes for easy access when clicked
+                alertItem.dataset.hiveName = htmlspecialchars(alert.hive_name || alert.hive_id);
+                alertItem.dataset.alertLevel = htmlspecialchars(alert.alert_level);
+                alertItem.dataset.createdAt = htmlspecialchars(alert.created_at);
+                alertItem.dataset.message = htmlspecialchars(alert.message);
+
                 alertItem.innerHTML = `
-                    <strong>${alert.alert_level.toUpperCase()}!</strong> Hive ${alert.hive_name || alert.hive_id}: ${htmlspecialchars(alert.message)}
+                    <strong>${alert.alert_level.toUpperCase()}!</strong> Hive ${htmlspecialchars(alert.hive_name || alert.hive_id)}: ${htmlspecialchars(alert.message.substring(0, 70))}...
                     <small class="float-end text-muted">${new Date(alert.created_at).toLocaleString()}</small>
                 `;
                 alertsListDiv.appendChild(alertItem);
+
+                // Add event listener to show modal on click
+                alertItem.addEventListener('click', () => {
+                    showViewAlertModal({
+                        hive_name: alertItem.dataset.hiveName,
+                        alert_level: alertItem.dataset.alertLevel,
+                        created_at: alertItem.dataset.createdAt,
+                        message: alertItem.dataset.message
+                    });
+                });
             });
         } else {
             alertsListDiv.innerHTML = '<p class="text-center text-muted">No recent alerts.</p>';
@@ -221,10 +343,10 @@ async function fetchOfficers() {
         const response = await fetch('backend.php?action=get_officers');
         const data = await response.json();
         const officerSelect = document.getElementById('officerSelect');
-        const editReportOfficerSelect = document.getElementById('editReportOfficerSelect'); // For edit report modal
+        const editReportOfficerSelect = document.getElementById('editReportOfficerSelect'); 
         
-        officerSelect.innerHTML = '<option value="">Select an officer</option>'; // Reset options
-        editReportOfficerSelect.innerHTML = '<option value="">Select an officer</option>'; // Reset options for edit modal
+        officerSelect.innerHTML = '<option value="">Select an officer</option>'; 
+        editReportOfficerSelect.innerHTML = '<option value="">Select an officer</option>'; 
 
         if (data.success && data.officers && data.officers.length > 0) {
             data.officers.forEach(officer => {
@@ -233,7 +355,7 @@ async function fetchOfficers() {
                 option.textContent = `${officer.full_name} (${officer.email})`;
                 officerSelect.appendChild(option);
 
-                const editOption = option.cloneNode(true); // Clone for edit modal
+                const editOption = option.cloneNode(true); 
                 editReportOfficerSelect.appendChild(editOption);
             });
         } else {
@@ -242,8 +364,8 @@ async function fetchOfficers() {
         }
     } catch (error) {
         console.error('Error fetching officers:', error);
-        document.getElementById('officerSelect').innerHTML = '<option value="">Error loading officers</option>';
-        document.getElementById('editReportOfficerSelect').innerHTML = '<option value="">Error loading officers</option>';
+        document.getElementById('officerSelect').innerHTML = '<p class="text-danger">Error loading officers</p>'; // Changed to p tag
+        document.getElementById('editReportOfficerSelect').innerHTML = '<p class="text-danger">Error loading officers</p>'; // Changed to p tag
     }
 }
 
@@ -447,10 +569,10 @@ async function fetchBeehivesForSensorRegistration() {
         const response = await fetch('backend.php?action=get_beehives_for_selection');
         const data = await response.json();
         const hiveSelect = document.getElementById('hiveSelect');
-        const editSensorHiveSelect = document.getElementById('editSensorHiveSelect'); // For edit modal
+        const editSensorHiveSelect = document.getElementById('editSensorHiveSelect'); 
         
-        hiveSelect.innerHTML = '<option value="">Select a beehive</option>'; // Reset options
-        editSensorHiveSelect.innerHTML = '<option value="">Select a beehive</option>'; // Reset options for edit modal
+        hiveSelect.innerHTML = '<option value="">Select a beehive</option>'; 
+        editSensorHiveSelect.innerHTML = '<option value="">Select a beehive</option>'; 
 
         if (data.success && data.hives && data.hives.length > 0) {
             data.hives.forEach(hive => {
@@ -459,91 +581,182 @@ async function fetchBeehivesForSensorRegistration() {
                 option.textContent = htmlspecialchars(hive.hive_name);
                 hiveSelect.appendChild(option);
 
-                const editOption = option.cloneNode(true); // Clone for edit modal
+                const editOption = option.cloneNode(true); 
                 editSensorHiveSelect.appendChild(editOption);
             });
-            hiveSelect.disabled = false; // Enable if hives are found
-            editSensorHiveSelect.disabled = false; // Enable for edit modal
+            hiveSelect.disabled = false; 
+            editSensorHiveSelect.disabled = false; 
         } else {
             hiveSelect.innerHTML = '<option value="">No beehives found. Please add one first!</option>';
-            hiveSelect.disabled = true; // Disable if no hives
+            hiveSelect.disabled = true; 
             editSensorHiveSelect.innerHTML = '<option value="">No beehives found.</option>';
             editSensorHiveSelect.disabled = true;
         }
     } catch (error) {
         console.error('Error fetching beehives for sensor registration:', error);
-        document.getElementById('hiveSelect').innerHTML = '<option value="">Error loading beehives</option>';
+        document.getElementById('hiveSelect').innerHTML = '<p class="text-danger">Error loading beehives</p>'; // Changed to p tag
         document.getElementById('hiveSelect').disabled = true;
-        document.getElementById('editSensorHiveSelect').innerHTML = '<option value="">Error loading beehives</option>';
+        document.getElementById('editSensorHiveSelect').innerHTML = '<p class="text-danger">Error loading beehives</p>'; // Changed to p tag
         document.getElementById('editSensorHiveSelect').disabled = true;
     }
 }
 
-// NEW: Function to fetch and display registered sensors
+// Function to fetch and display registered sensors
 async function fetchRegisteredSensors() {
     try {
         const response = await fetch('backend.php?action=get_registered_sensors');
-        const data = await response.json(); // Await the JSON parsing
+        const data = await response.json(); 
         const registeredSensorsListDiv = document.getElementById('registeredSensorsList');
-        registeredSensorsListDiv.innerHTML = ''; // Clear existing content
+
+        // Use a temporary map to track current sensor elements and their charts
+        const fetchedSensorIds = new Set();
+        const existingTable = registeredSensorsListDiv.querySelector('table');
+        let tbody;
 
         if (data.success && data.sensors && data.sensors.length > 0) {
-            const table = document.createElement('table');
-            table.className = 'table table-striped table-hover';
-            table.innerHTML = `
-                <thead>
-                    <tr>
-                        <th>Hive Name</th>
-                        <th>Serial Number</th>
-                        <th>Sensor Type</th>
-                        <th>Registered On</th>
-                        <th>Actions</th> <!-- Added Actions column -->
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            `;
-            const tbody = table.querySelector('tbody');
-
-            data.sensors.forEach(sensor => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${htmlspecialchars(sensor.hive_name)} (${htmlspecialchars(sensor.location)})</td>
-                    <td>${htmlspecialchars(sensor.serial_number)}</td>
-                    <td>${htmlspecialchars(sensor.sensor_type)}</td>
-                    <td>${new Date(sensor.created_at).toLocaleString()}</td>
-                    <td>
-                        <button class="btn btn-sm btn-info-custom edit-sensor-btn me-1"
-                            data-id="${sensor.id}"
-                            data-hive-id="${sensor.hive_id_fk}"
-                            data-serial-number="${htmlspecialchars(sensor.serial_number)}"
-                            data-sensor-type="${htmlspecialchars(sensor.sensor_type)}">Edit</button>
-                        <button class="btn btn-sm btn-danger delete-sensor-btn" data-id="${sensor.id}">Delete</button>
-                    </td>
+            if (!existingTable) {
+                // Create table if it doesn't exist
+                const table = document.createElement('table');
+                table.className = 'table table-striped table-hover';
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Hive Name</th>
+                            <th>Serial Number</th>
+                            <th>Sensor Type</th>
+                            <th>Registered On</th>
+                            <th>Actions</th> 
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
                 `;
-                tbody.appendChild(tr);
-            });
-            registeredSensorsListDiv.appendChild(table);
+                registeredSensorsListDiv.innerHTML = ''; // Clear previous "Loading..." or "No sensors" message
+                registeredSensorsListDiv.appendChild(table);
+                tbody = table.querySelector('tbody');
+            } else {
+                tbody = existingTable.querySelector('tbody');
+            }
+            
+            // Collect IDs of currently displayed sensors for comparison later
+            const currentlyDisplayedSensorIds = new Set(Array.from(tbody.querySelectorAll('tr[data-sensor-id]')).map(row => parseInt(row.dataset.sensorId)));
 
-            // Add event listeners for new buttons
+            for (const sensor of data.sensors) {
+                fetchedSensorIds.add(sensor.id);
+                let sensorRow = tbody.querySelector(`tr[data-sensor-id="${sensor.id}"]`);
+                let chartRow = tbody.querySelector(`tr[data-sensor-chart-id="${sensor.id}"]`);
+
+                if (!sensorRow) {
+                    // Create new sensor row and chart row if they don't exist
+                    sensorRow = document.createElement('tr');
+                    sensorRow.dataset.sensorId = sensor.id; // Mark row with sensor ID
+                    sensorRow.innerHTML = `
+                        <td>${htmlspecialchars(sensor.hive_name)} (${htmlspecialchars(sensor.location)})</td>
+                        <td>${htmlspecialchars(sensor.serial_number)}</td>
+                        <td>${htmlspecialchars(sensor.sensor_type)}</td>
+                        <td>${new Date(sensor.created_at).toLocaleString()}</td>
+                        <td>
+                            <button class="btn btn-sm btn-info-custom edit-sensor-btn me-1"
+                                data-id="${sensor.id}"
+                                data-hive-id="${sensor.hive_id_fk}"
+                                data-serial-number="${htmlspecialchars(sensor.serial_number)}"
+                                data-sensor-type="${htmlspecialchars(sensor.sensor_type)}">Edit</button>
+                            <button class="btn btn-sm btn-danger delete-sensor-btn" data-id="${sensor.id}">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(sensorRow);
+
+                    chartRow = document.createElement('tr');
+                    chartRow.dataset.sensorChartId = sensor.id; // Mark chart row with sensor ID
+                    chartRow.innerHTML = `
+                        <td colspan="5">
+                            <div class="card p-2 mb-2">
+                                <h6 class="mb-2">📈 Trend for Sensor ${htmlspecialchars(sensor.serial_number)}</h6>
+                                <div class="chart-container-wrapper" style="height: 350px;"> <!-- Increased height for sensor charts -->
+                                    <canvas id="sensorChart-${sensor.id}"></canvas>
+                                </div>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(chartRow);
+
+                    const canvasElement = document.getElementById(`sensorChart-${sensor.id}`);
+                    const chart = initializeChart(canvasElement, `Sensor ${htmlspecialchars(sensor.serial_number)} Trends`);
+                    if (chart) {
+                        sensorCharts.set(sensor.id, chart);
+                    }
+                } else {
+                    // Update existing sensor row content
+                    sensorRow.querySelector('td:nth-child(1)').textContent = `${htmlspecialchars(sensor.hive_name)} (${htmlspecialchars(sensor.location)})`;
+                    sensorRow.querySelector('td:nth-child(2)').textContent = htmlspecialchars(sensor.serial_number);
+                    sensorRow.querySelector('td:nth-child(3)').textContent = htmlspecialchars(sensor.sensor_type);
+                    sensorRow.querySelector('td:nth-child(4)').textContent = new Date(sensor.created_at).toLocaleString();
+                    // Update data attributes for edit button
+                    const editButton = sensorRow.querySelector('.edit-sensor-btn');
+                    if (editButton) {
+                        editButton.dataset.name = htmlspecialchars(sensor.hive_name); // This was missing
+                        editButton.dataset.location = htmlspecialchars(sensor.location); // This was missing
+                        editButton.dataset.hiveId = sensor.hive_id_fk;
+                        editButton.dataset.serialNumber = htmlspecialchars(sensor.serial_number);
+                        editButton.dataset.sensorType = htmlspecialchars(sensor.sensor_type);
+                    }
+                    const deleteButton = sensorRow.querySelector('.delete-sensor-btn');
+                    if (deleteButton) {
+                        deleteButton.dataset.id = sensor.id;
+                    }
+
+                    // Update chart title if it exists
+                    const chartTitleElement = chartRow.querySelector('h6');
+                    if (chartTitleElement) {
+                        chartTitleElement.textContent = `📈 Trend for Sensor ${htmlspecialchars(sensor.serial_number)}`;
+                    }
+                }
+                
+                // Always fetch data for the chart, whether new or existing
+                fetchSensorDataBySensorId(sensor.id);
+            }
+
+            // Remove rows (and destroy charts) for sensors that are no longer in the fetched data
+            for (const sensorId of currentlyDisplayedSensorIds) {
+                if (!fetchedSensorIds.has(sensorId)) {
+                    const chartInstance = sensorCharts.get(sensorId);
+                    if (chartInstance) {
+                        chartInstance.destroy();
+                        sensorCharts.delete(sensorId);
+                        console.log(`Destroyed chart for deleted sensor: ${sensorId}`);
+                    }
+                    const sensorRowToRemove = tbody.querySelector(`tr[data-sensor-id="${sensorId}"]`);
+                    const chartRowToRemove = tbody.querySelector(`tr[data-sensor-chart-id="${sensorId}"]`);
+                    if (sensorRowToRemove) sensorRowToRemove.remove();
+                    if (chartRowToRemove) chartRowToRemove.remove();
+                    console.log(`Removed rows for deleted sensor: ${sensorId}`);
+                }
+            }
+
+            // Re-add event listeners for all current buttons (newly created or existing)
             document.querySelectorAll('.edit-sensor-btn').forEach(button => {
-                button.addEventListener('click', (event) => {
+                button.onclick = (event) => {
                     const sensorId = event.target.dataset.id;
                     const hiveId = event.target.dataset.hiveId;
                     const serialNumber = event.target.dataset.serialNumber;
                     const sensorType = event.target.dataset.sensorType;
                     showEditSensorModal(sensorId, hiveId, serialNumber, sensorType);
-                });
+                };
             });
 
             document.querySelectorAll('.delete-sensor-btn').forEach(button => {
-                button.addEventListener('click', (event) => {
+                button.onclick = (event) => {
                     const sensorId = event.target.dataset.id;
                     showDeleteConfirmModal('sensor', sensorId);
-                });
+                };
             });
 
         } else {
             registeredSensorsListDiv.innerHTML = '<p class="text-center text-muted">No sensors registered yet.</p>';
+            // If no sensors, destroy all existing sensor charts
+            for (const [sensorId, chartInstance] of sensorCharts.entries()) {
+                chartInstance.destroy();
+                sensorCharts.delete(sensorId);
+            }
         }
     } catch (error) {
         console.error('Error fetching registered sensors:', error);
@@ -551,7 +764,7 @@ async function fetchRegisteredSensors() {
     }
 }
 
-// NEW: Function to add a beehive
+// Function to add a beehive
 async function addBeehive(hiveName, location) {
     try {
         const response = await fetch('backend.php?action=add_beehive', {
@@ -562,7 +775,7 @@ async function addBeehive(hiveName, location) {
         const data = await response.json();
         if (data.success) {
             showBootstrapAlert('success', data.message || 'Beehive added successfully.');
-            fetchBeehivesOverview(); // Refresh the list
+            fetchBeehivesOverview(); // Refresh the list (and hive charts)
         } else {
             showBootstrapAlert('danger', data.message || 'Failed to add beehive.');
         }
@@ -572,7 +785,7 @@ async function addBeehive(hiveName, location) {
     }
 }
 
-// NEW: Function to update a beehive
+// Function to update a beehive
 async function updateBeehive(hiveId, hiveName, location) {
     try {
         const response = await fetch('backend.php?action=update_beehive', {
@@ -583,7 +796,7 @@ async function updateBeehive(hiveId, hiveName, location) {
         const data = await response.json();
         if (data.success) {
             showBootstrapAlert('success', data.message || 'Beehive updated successfully.');
-            fetchBeehivesOverview(); // Refresh the list
+            fetchBeehivesOverview(); // Refresh the list (and hive charts)
         } else {
             showBootstrapAlert('danger', data.message || 'Failed to update beehive.');
         }
@@ -593,7 +806,7 @@ async function updateBeehive(hiveId, hiveName, location) {
     }
 }
 
-// NEW: Function to delete a beehive
+// Function to delete a beehive
 async function deleteBeehive(hiveId) {
     try {
         const response = await fetch(`backend.php?action=delete_beehive&id=${hiveId}`, {
@@ -602,8 +815,9 @@ async function deleteBeehive(hiveId) {
         const data = await response.json();
         if (data.success) {
             showBootstrapAlert('success', data.message || 'Beehive deleted successfully.');
-            fetchBeehivesOverview(); // Refresh the list
+            fetchBeehivesOverview(); // Refresh the list (and hive charts)
             fetchBeehivesForSensorRegistration(); // Also refresh hive dropdowns
+            fetchRegisteredSensors(); // Refresh sensors as well, in case a sensor's hive was deleted
         } else {
             showBootstrapAlert('danger', data.message || 'Failed to delete beehive.');
         }
@@ -613,7 +827,7 @@ async function deleteBeehive(hiveId) {
     }
 }
 
-// NEW: Function to update a sensor
+// Function to update a sensor
 async function updateSensor(sensorId, hiveId, serialNumber, sensorType) {
     try {
         const response = await fetch('backend.php?action=update_sensor', {
@@ -629,7 +843,7 @@ async function updateSensor(sensorId, hiveId, serialNumber, sensorType) {
         const data = await response.json();
         if (data.success) {
             showBootstrapAlert('success', data.message || 'Sensor updated successfully.');
-            fetchRegisteredSensors(); // Refresh the list
+            fetchRegisteredSensors(); // Refresh the list (and sensor charts)
         } else {
             showBootstrapAlert('danger', data.message || 'Failed to update sensor.');
         }
@@ -639,7 +853,7 @@ async function updateSensor(sensorId, hiveId, serialNumber, sensorType) {
     }
 }
 
-// NEW: Function to delete a sensor
+// Function to delete a sensor
 async function deleteSensor(sensorId) {
     try {
         const response = await fetch(`backend.php?action=delete_sensor&id=${sensorId}`, {
@@ -648,7 +862,7 @@ async function deleteSensor(sensorId) {
         const data = await response.json();
         if (data.success) {
             showBootstrapAlert('success', data.message || 'Sensor deleted successfully.');
-            fetchRegisteredSensors(); // Refresh the list
+            fetchRegisteredSensors(); // Refresh the list (and sensor charts)
         } else {
             showBootstrapAlert('danger', data.message || 'Failed to delete sensor.');
         }
@@ -658,7 +872,7 @@ async function deleteSensor(sensorId) {
     }
 }
 
-// NEW: Function to update a report
+// Function to update a report
 async function updateReport(reportId, officerId, message) {
     try {
         const response = await fetch('backend.php?action=update_report', {
@@ -738,7 +952,7 @@ async function showEditSensorModal(sensorId, hiveId, serialNumber, sensorType) {
     editSensorModal.show();
 }
 
-// NEW: Function to show Edit Report Modal and populate fields
+// Function to show Edit Report Modal and populate fields
 async function showEditReportModal(reportId, officerId, message) {
     document.getElementById('editReportId').value = reportId;
     document.getElementById('editReportMessage').value = message;
@@ -754,23 +968,48 @@ async function showEditReportModal(reportId, officerId, message) {
     editReportModal.show();
 }
 
+// NEW: Function to show Alert Details Modal
+function showViewAlertModal(alertData) {
+    document.getElementById('viewAlertHiveName').textContent = alertData.hive_name;
+    document.getElementById('viewAlertLevel').textContent = alertData.alert_level.toUpperCase();
+    document.getElementById('viewAlertDateTime').textContent = new Date(alertData.created_at).toLocaleString();
+    
+    const viewAlertMessageDiv = document.getElementById('viewAlertMessage');
+    viewAlertMessageDiv.textContent = alertData.message;
+    // Set alert class based on level
+    viewAlertMessageDiv.className = `alert mt-3 alert-${alertData.alert_level === 'critical' ? 'danger' : 'warning'}`;
+    
+    const viewAlertModal = new bootstrap.Modal(document.getElementById('viewAlertModal'));
+    viewAlertModal.show();
+}
+
 
 // Event listeners and initial data loads
 document.addEventListener('DOMContentLoaded', async function() {
     // Initial data fetches
-    await fetchBeehivesOverview();
-    await fetchSensorData(); // This will now use local backend only
+    await fetchBeehivesOverview(); // This will now also initialize and fetch data for each hive's chart
     await fetchAlerts();
     await fetchSentReports();
     await fetchReceivedRecommendations();
-    await fetchRegisteredSensors(); // Fetch registered sensors on load
+    await fetchRegisteredSensors(); // This will now also initialize and fetch data for each sensor's chart
 
-    // Auto-refresh sensor data, alerts, and beehives overview every 10 seconds
-    setInterval(fetchBeehivesOverview, 10000);
-    setInterval(fetchSensorData, 10000); // This will now use local backend only
-    setInterval(fetchAlerts, 10000);
-    setInterval(fetchRegisteredSensors, 10000);
-    setInterval(fetchSentReports, 10000);
+    // Auto-refresh data
+    // Instead of re-fetching everything which can cause flicker,
+    // we'll trigger updates for existing charts.
+    setInterval(async () => {
+        // Update hive charts
+        for (const hiveId of hiveCharts.keys()) {
+            await fetchHiveSensorData(hiveId);
+        }
+        // Update sensor charts
+        for (const sensorId of sensorCharts.keys()) {
+            await fetchSensorDataBySensorId(sensorId);
+        }
+        // Also refresh other lists that don't have charts
+        fetchAlerts();
+        fetchRegisteredSensors(); // This will handle adding/removing sensors and re-initializing their charts
+        fetchSentReports();
+    }, 10000); // Every 10 seconds
 
     // Populate officers dropdown when sendReportModal is shown
     const sendReportModal = document.getElementById('sendReportModal');
@@ -831,7 +1070,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
-    // NEW: Handle Register Sensor Form submission
+    // Handle Register Sensor Form submission
     document.getElementById('registerSensorForm').addEventListener('submit', async function(event) {
         event.preventDefault();
         const hiveId = document.getElementById('hiveSelect').value;
@@ -862,7 +1101,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 registerSensorFormMessageDiv.textContent = data.message || 'Sensor registered successfully!';
                 registerSensorFormMessageDiv.style.display = 'block';
                 document.getElementById('registerSensorForm').reset(); // Clear form
-                fetchRegisteredSensors(); // Refresh registered sensors list
+                fetchRegisteredSensors(); // Refresh registered sensors list (and sensor charts)
                 // Optionally close modal after success
                 setTimeout(() => {
                     const modal = bootstrap.Modal.getInstance(registerSensorModal);
@@ -883,7 +1122,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
-    // NEW: Handle Add Beehive Form submission
+    // Handle Add Beehive Form submission
     document.getElementById('addBeehiveForm').addEventListener('submit', async function(event) {
         event.preventDefault();
         const hiveName = document.getElementById('newHiveName').value;
@@ -913,7 +1152,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 addBeehiveFormMessageDiv.textContent = data.message || 'Beehive added successfully!';
                 addBeehiveFormMessageDiv.style.display = 'block';
                 document.getElementById('addBeehiveForm').reset(); // Clear form
-                fetchBeehivesOverview(); // Refresh beehives list
+                fetchBeehivesOverview(); // Refresh beehives list (which also refreshes charts)
                 fetchBeehivesForSensorRegistration(); // Also refresh hive dropdowns in sensor modals
                 // Optionally close modal after success
                 setTimeout(() => {
@@ -935,7 +1174,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
-    // NEW: Handle Edit Beehive Form submission
+    // Handle Edit Beehive Form submission
     document.getElementById('editBeehiveForm').addEventListener('submit', async function(event) {
         event.preventDefault();
         const hiveId = document.getElementById('editHiveId').value;
@@ -965,7 +1204,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 editBeehiveFormMessageDiv.classList.add('alert-success');
                 editBeehiveFormMessageDiv.textContent = data.message || 'Beehive updated successfully!';
                 editBeehiveFormMessageDiv.style.display = 'block';
-                fetchBeehivesOverview(); // Refresh beehives list
+                fetchBeehivesOverview(); // Refresh beehives list (which also refreshes charts)
                 fetchBeehivesForSensorRegistration(); // Also refresh hive dropdowns in sensor modals
                 // Optionally close modal after success
                 setTimeout(() => {
@@ -987,7 +1226,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
-    // NEW: Handle Edit Sensor Form submission
+    // Handle Edit Sensor Form submission
     document.getElementById('editSensorForm').addEventListener('submit', async function(event) {
         event.preventDefault();
         const sensorId = document.getElementById('editSensorId').value;
@@ -1023,7 +1262,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 editSensorFormMessageDiv.classList.add('alert-success');
                 editSensorFormMessageDiv.textContent = data.message || 'Sensor updated successfully!';
                 editSensorFormMessageDiv.style.display = 'block';
-                fetchRegisteredSensors(); // Refresh registered sensors list
+                fetchRegisteredSensors(); // Refresh registered sensors list (and sensor charts)
                 // Optionally close modal after success
                 setTimeout(() => {
                     const modal = bootstrap.Modal.getInstance(document.getElementById('editSensorModal'));
@@ -1044,7 +1283,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
-    // NEW: Handle Edit Report Form submission
+    // andle Edit Report Form submission
     document.getElementById('editReportForm').addEventListener('submit', async function(event) {
         event.preventDefault();
         const reportId = document.getElementById('editReportId').value;
